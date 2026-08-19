@@ -1,0 +1,431 @@
+[0;36m[INFO 20:59:54.647][0m  Detecting hardware...
+[0;36m[INFO 20:59:54.735][0m  CPU: 16 cores | RAM: 62GB | GPU: NVIDIA GeForce RTX 5080 (15 GB VRAM)
+[2m[WORKING] CPU: 16 cores | RAM: 62GB | GPU: NVIDIA GeForce RTX 5080 (15 GB VRAM)[0m
+[0;36m[INFO 21:00:02.909][0m    Windows RAM query did not finish in 8 seconds; keeping the existing 64GB WSL memory limit.
+[0;36m[INFO 21:00:02.923][0m    Kept the existing .wslconfig memory limit at 64GB.
+[0;36m[INFO 21:00:02.955][0m  Step 1/11: Installing system packages...
+[0;36m[INFO 21:00:02.964][0m    Updating package lists...
+Hit:1 https://download.docker.com/linux/ubuntu noble InRelease
+Hit:2 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease
+Hit:3 http://archive.ubuntu.com/ubuntu noble InRelease
+Hit:4 http://security.ubuntu.com/ubuntu noble-security InRelease
+Hit:5 http://archive.ubuntu.com/ubuntu noble-updates InRelease
+Hit:6 http://archive.ubuntu.com/ubuntu noble-backports InRelease
+[2m[WORKING] Updating Ubuntu package lists[0m
+Hit:7 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64  InRelease
+Reading package lists...
+[0;36m[INFO 21:00:05.501][0m    Installing core packages (build tools, Python, Git, and diagnostics)...
+[2m[WORKING]   Installing core packages (build tools, Python, Git, and diagnostics)...[0m
+Reading package lists...
+Building dependency tree...
+Reading state information...
+build-essential is already the newest version (12.10ubuntu1).
+cmake is already the newest version (3.28.3-1build7).
+git is already the newest version (1:2.43.0-1ubuntu7.3).
+curl is already the newest version (8.5.0-2ubuntu10.11).
+wget is already the newest version (1.21.4-1ubuntu4.4).
+unzip is already the newest version (6.0-28ubuntu4.1).
+python3 is already the newest version (3.12.3-0ubuntu2.1).
+python3-pip is already the newest version (24.0+dfsg-1ubuntu1.3).
+python3-venv is already the newest version (3.12.3-0ubuntu2.1).
+python3-dev is already the newest version (3.12.3-0ubuntu2.1).
+python3-tk is already the newest version (3.12.3-0ubuntu1).
+pipx is already the newest version (1.4.3-1).
+jq is already the newest version (1.7.1-3ubuntu0.24.04.2).
+file is already the newest version (1:5.45-3build1).
+bc is already the newest version (1.07.1-3ubuntu4).
+net-tools is already the newest version (2.10-0.1ubuntu4.4).
+openssh-client is already the newest version (1:9.6p1-3ubuntu13.18).
+rsync is already the newest version (3.2.7-1ubuntu1.5).
+htop is already the newest version (3.3.0-4build1).
+tmux is already the newest version (3.4-1ubuntu0.1).
+screen is already the newest version (4.9.1-1ubuntu1).
+tree is already the newest version (2.1.1-2ubuntu3.24.04.2).
+pkg-config is already the newest version (1.8.1-2build1).
+ca-certificates is already the newest version (20260601~24.04.1).
+gnupg is already the newest version (2.4.4-2ubuntu17.4).
+lsb-release is already the newest version (12.0-2).
+software-properties-common is already the newest version (0.99.49.4).
+apt-transport-https is already the newest version (2.8.3).
+libopenblas-dev is already the newest version (0.3.26+ds-1ubuntu0.1).
+libcurl4-openssl-dev is already the newest version (8.5.0-2ubuntu10.11).
+libssl-dev is already the newest version (3.0.13-0ubuntu3.12).
+shellcheck is already the newest version (0.9.0-1).
+bats is already the newest version (1.10.0-1).
+0 upgraded, 0 newly installed, 0 to remove and 60 not upgraded.
+[0;32m[DONE 21:00:06.305][0m  Core development tools installed
+[0;36m[INFO 21:00:06.313][0m    Installing CLI tools (ripgrep, fd, bat, fzf, etc)...
+Reading package lists...
+Building dependency tree...[2m[WORKING] installing Fast command-line tools[0m
+
+Reading state information...
+ripgrep is already the newest version (14.1.0-1).
+fd-find is already the newest version (9.0.0-1).
+bat is already the newest version (0.24.0-1build1).
+fzf is already the newest version (0.44.1-1ubuntu0.3).
+trash-cli is already the newest version (0.23.11.10-1).
+xclip is already the newest version (0.13-3).
+xsel is already the newest version (1.2.1-1).
+parallel is already the newest version (20231122+ds-1).
+moreutils is already the newest version (0.69-1).
+strace is already the newest version (6.8-0ubuntu2).
+lsof is already the newest version (4.95.0-1build3).
+netcat-openbsd is already the newest version (1.226-1ubuntu2).
+dnsutils is already the newest version (1:9.18.39-0ubuntu0.24.04.5).
+entr is already the newest version (5.5-1).
+watchman is already the newest version (4.9.0-7build4).
+hyperfine is already the newest version (1.18.0-2build1).
+0 upgraded, 0 newly installed, 0 to remove and 60 not upgraded.
+[0;32m[DONE 21:00:06.881][0m  Fast command-line tools installed
+[0;36m[INFO 21:00:06.888][0m    Installing universal media, document, database, network, and OCR tools...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+ffmpeg is already the newest version (7:6.1.1-3ubuntu5).
+imagemagick is already the newest version (8:6.9.12.98+dfsg1-5.2build2).
+pandoc is already the newest version (3.1.3+ds-2).
+sqlite3 is already the newest version (3.45.1-1ubuntu2.7).
+poppler-utils is already the newest version (24.02.0-1ubuntu9.9).
+ghostscript is already the newest version (10.02.1~dfsg1-0ubuntu7.8).
+tesseract-ocr is already the newest version (5.3.4-1build5).
+nmap is already the newest version (7.94+git20230807.3be01efb1+dfsg-3build2).
+tree is already the newest version (2.1.1-2ubuntu3.24.04.2).
+zip is already the newest version (3.0-13ubuntu0.2).
+gzip is already the newest version (1.12-1ubuntu3.2).
+bzip2 is already the newest version (1.0.8-5.1build0.1).
+xz-utils is already the newest version (5.6.1+really5.4.5-1ubuntu0.3).
+zstd is already the newest version (1.5.5+dfsg2-2build1.1).
+nodejs is already the newest version (18.19.1+dfsg-6ubuntu5).
+npm is already the newest version (9.2.0~ds1-2).
+bc is already the newest version (1.07.1-3ubuntu4).
+expect is already the newest version (5.45.4-3).
+sshpass is already the newest version (1.09-1).
+postgresql-client is already the newest version (16+257build1.1).
+default-mysql-client is already the newest version (1.1.0build1).
+redis-tools is already the newest version (5:7.0.15-1ubuntu0.24.04.4).
+adb is already the newest version (1:34.0.4-1build3).
+scrcpy is already the newest version (1.25-1ubuntu1).
+graphviz is already the newest version (2.42.2-9ubuntu0.1).
+0 upgraded, 0 newly installed, 0 to remove and 60 not upgraded.
+[0;32m[DONE 21:00:07.577][0m  Universal data and automation tools installed
+[0;36m[INFO 21:00:07.587][0m    Installing broad compiler, language, debugger, and build-system coverage...
+[2m[WORKING]   Installing broad compiler, language, debugger, and build-system coverage...[0m
+Reading package lists...
+Building dependency tree...
+Reading state information...
+clang is already the newest version (1:18.0-59~exp2).
+lldb is already the newest version (1:18.0-59~exp2).
+gdb is already the newest version (15.1-1ubuntu1~24.04.1).
+valgrind is already the newest version (1:3.22.0-0ubuntu3).
+ninja-build is already the newest version (1.11.1-2).
+meson is already the newest version (1.3.2-1ubuntu1).
+ccache is already the newest version (4.9.1-1).
+mold is already the newest version (2.30.0+dfsg-1build1).
+nasm is already the newest version (2.16.01-1build1).
+yasm is already the newest version (1.3.0-4).
+autoconf is already the newest version (2.71-3).
+automake is already the newest version (1:1.16.5-1.3ubuntu1).
+libtool is already the newest version (2.4.7-7build1).
+bison is already the newest version (2:3.8.2+dfsg-1build2).
+flex is already the newest version (2.6.4-8.2build1).
+gfortran is already the newest version (4:13.2.0-7ubuntu1).
+0 upgraded, 0 newly installed, 0 to remove and 60 not upgraded.
+[0;32m[DONE 21:00:08.131][0m  Native compilers and build systems installed
+Reading package lists...
+Building dependency tree...
+Reading state information...
+[2m[WORKING] installing Major language SDKs and package managers[0m
+dotnet-sdk-10.0 is already the newest version (10.0.110-0ubuntu1~24.04.1).
+default-jdk is already the newest version (2:1.21-75+exp1).
+maven is already the newest version (3.8.7-2).
+gradle is already the newest version (4.4.1-20).
+golang-go is already the newest version (2:1.22~2build1).
+ruby-full is already the newest version (1:3.2~ubuntu1).
+php-cli is already the newest version (2:8.3+93ubuntu2).
+php-dev is already the newest version (2:8.3+93ubuntu2).
+composer is already the newest version (2.7.1-2).
+lua5.4 is already the newest version (5.4.6-3build2).
+liblua5.4-dev is already the newest version (5.4.6-3build2).
+luarocks is already the newest version (3.8.0+dfsg1-1).
+r-base is already the newest version (4.3.3-2build2).
+r-base-dev is already the newest version (4.3.3-2build2).
+ghc is already the newest version (9.4.7-3).
+cabal-install is already the newest version (3.8.1.0-1).
+nim is already the newest version (1.6.14-1ubuntu2).
+crystal is already the newest version (1.11.2+dfsg-1build3).
+erlang is already the newest version (1:25.3.2.8+dfsg-1ubuntu4.6).
+elixir is already the newest version (1.14.0.dfsg-2).
+mono-devel is already the newest version (6.8.0.105+dfsg-3.6ubuntu2).
+fpc is already the newest version (3.2.2+dfsg-32).
+ocaml is already the newest version (4.14.1-1ubuntu1).
+opam is already the newest version (2.1.5-1).
+clojure is already the newest version (1.11.1-2).
+kotlin is already the newest version (1.3.31+ds1-1ubuntu1).
+scala is already the newest version (2.11.12-5).
+0 upgraded, 0 newly installed, 0 to remove and 60 not upgraded.
+[0;32m[DONE 21:00:08.851][0m  Major language SDKs and package managers installed
+[0;36m[INFO 21:00:08.859][0m    Installing the official Rust toolchain with Cargo, Clippy, and rustfmt...
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.97.1 (8bab26f4f 2026-07-14)
+
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.97.1 (8bab26f4f 2026-07-14)
+
+[0;32m[DONE 21:00:09.665][0m  Official Rust toolchain installed
+[0;36m[INFO 21:00:09.673][0m    Installing mise for verified on-demand coverage of hundreds of additional toolchains...
+[2m[WORKING]   Installing mise for verified on-demand coverage of hundreds of additional toolchains...[0m
+2026.8.6 linux-x64 (2026-08-14)
+[0;32m[DONE 21:00:09.781][0m  mise runtime manager installed for uncommon and project-pinned toolchains
+[0;36m[INFO 21:00:09.789][0m    Installing the current Node.js 24 LTS line from signed official release checksums...
+[0;32m[DONE 21:00:09.873][0m  Official Node.js v24.19.0 installed
+
+changed 75 packages in 9s
+
+18 packages are looking for funding
+  run `npm fund` for details
+[0;32m[DONE 21:00:19.076][0m  Global JavaScript and TypeScript verification tools installed and exposed on PATH
+[0;36m[INFO 21:00:19.083][0m    Installing PowerShell 7 for cross-platform scripting...
+[0;32m[DONE 21:00:19.091][0m  PowerShell 7 already installed
+[0;36m[INFO 21:00:19.099][0m    Installing optional power tools (GitHub CLI, Docker, yt-dlp)...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+gh is already the newest version (2.45.0-1ubuntu0.3).
+0 upgraded, 0 newly installed, 0 to remove and 60 not upgraded.
+Reading package lists...
+Building dependency tree...
+Reading state information...
+[2m[WORKING] Installing yt-dlp[0m
+yt-dlp is already the newest version (2024.04.09-1).
+0 upgraded, 0 newly installed, 0 to remove and 60 not upgraded.
+[0;32m[DONE 21:00:19.852][0m    docker already installed
+[0;36m[INFO 21:00:19.861][0m    Creating an isolated Python environment for agent capabilities...
+[2m[WORKING]   Creating an isolated Python environment for agent capabilities...[0m
+Requirement already satisfied: pip in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (26.2.1)
+Requirement already satisfied: wheel in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (0.48.0)
+Requirement already satisfied: packaging>=24.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from wheel) (26.3)
+Requirement already satisfied: requests in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (2.34.2)
+Requirement already satisfied: beautifulsoup4 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (4.15.0)
+Requirement already satisfied: lxml in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (6.1.1)
+Requirement already satisfied: rich in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (15.0.0)
+Requirement already satisfied: prompt_toolkit in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (3.0.53)
+Requirement already satisfied: pytest in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (9.1.1)
+Requirement already satisfied: pytest-cov in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (7.1.0)
+Requirement already satisfied: ruff in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (0.16.3)
+Requirement already satisfied: mypy in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (2.3.1)
+Requirement already satisfied: pylint in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (4.0.7)
+Requirement already satisfied: black in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (26.5.1)
+Requirement already satisfied: isort in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (8.0.1)
+Requirement already satisfied: pip-tools in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (7.6.1)
+Requirement already satisfied: httpx in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (0.28.1)
+Requirement already satisfied: pydantic in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (2.13.4)
+Requirement already satisfied: fastapi in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (0.141.1)
+Requirement already satisfied: uvicorn in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (0.52.3)
+Requirement already satisfied: charset_normalizer<4,>=2 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from requests) (3.5.1)
+Requirement already satisfied: idna<4,>=2.5 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from requests) (3.18)
+Requirement already satisfied: urllib3<3,>=1.26 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from requests) (2.7.0)
+Requirement already satisfied: certifi>=2023.5.7 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from requests) (2026.7.22)
+Requirement already satisfied: soupsieve>=1.6.1 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from beautifulsoup4) (2.9.2)
+Requirement already satisfied: typing-extensions>=4.0.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from beautifulsoup4) (4.16.0)
+Requirement already satisfied: markdown-it-py>=2.2.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from rich) (4.2.0)
+Requirement already satisfied: pygments<3.0.0,>=2.13.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from rich) (2.20.0)
+Requirement already satisfied: wcwidth>=0.1.4 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from prompt_toolkit) (0.8.2)
+Requirement already satisfied: iniconfig>=1.0.1 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pytest) (2.3.0)
+Requirement already satisfied: packaging>=22 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pytest) (26.3)
+Requirement already satisfied: pluggy<2,>=1.5 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pytest) (1.6.0)
+Requirement already satisfied: coverage>=7.10.6 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from coverage[toml]>=7.10.6->pytest-cov) (7.15.4)
+Requirement already satisfied: mypy_extensions>=1.0.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from mypy) (1.1.0)
+Requirement already satisfied: pathspec>=1.0.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from mypy) (1.1.1)
+Requirement already satisfied: librt>=0.13.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from mypy) (0.15.0)
+Requirement already satisfied: ast-serialize<1.0.0,>=0.6.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from mypy) (0.8.0)
+Requirement already satisfied: astroid<=4.1.dev0,>=4.0.2 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pylint) (4.0.4)
+Requirement already satisfied: dill>=0.3.6 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pylint) (0.4.1)
+Requirement already satisfied: mccabe<0.8,>=0.6 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pylint) (0.7.0)
+Requirement already satisfied: platformdirs>=2.2 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pylint) (4.11.3)
+Requirement already satisfied: tomlkit>=0.10.1 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pylint) (0.15.1)
+Requirement already satisfied: click>=8.0.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from black) (8.4.2)
+Requirement already satisfied: pytokens~=0.4.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from black) (0.4.1)
+Requirement already satisfied: build>=1.0.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pip-tools) (1.5.0)
+Requirement already satisfied: pip>=22.2 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pip-tools) (26.2.1)
+Requirement already satisfied: pyproject_hooks in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pip-tools) (1.2.0)
+Requirement already satisfied: setuptools in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pip-tools) (84.0.0)
+Requirement already satisfied: wheel in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pip-tools) (0.48.0)
+Requirement already satisfied: anyio in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from httpx) (4.14.2)
+Requirement already satisfied: httpcore==1.* in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from httpx) (1.0.9)
+Requirement already satisfied: h11>=0.16 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from httpcore==1.*->httpx) (0.16.0)
+Requirement already satisfied: annotated-types>=0.6.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pydantic) (0.8.0)
+Requirement already satisfied: pydantic-core==2.46.4 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pydantic) (2.46.4)
+Requirement already satisfied: typing-inspection>=0.4.2 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pydantic) (0.4.4)
+Requirement already satisfied: starlette>=0.46.0 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from fastapi) (1.6.0)
+Requirement already satisfied: annotated-doc>=0.0.2 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from fastapi) (0.0.5)
+Requirement already satisfied: mdurl~=0.1 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from markdown-it-py>=2.2.0->rich) (0.1.2)
+Requirement already satisfied: playwright in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (1.62.0)
+Requirement already satisfied: pyee<14,>=13 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from playwright) (13.0.1)
+Requirement already satisfied: greenlet<4.0.0,>=3.1.1 in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from playwright) (3.5.5)
+Requirement already satisfied: typing-extensions in /root/.local/share/llama-agent/venv/lib/python3.12/site-packages (from pyee<14,>=13->playwright) (4.16.0)
+[0;32m[DONE 21:00:22.330][0m  System packages installed
+[0;36m[INFO 21:00:22.338][0m  Step 2/11: Ensuring CUDA toolkit...
+[2m[WORKING] Compiling a CUDA verification program with nvcc[0m
+[2m[WORKING] Running the CUDA verification program on the NVIDIA GPU[0m
+CUDA_TOOLCHAIN_AND_GPU_OK
+[0;32m[DONE 21:00:24.133][0m  CUDA toolkit and live NVIDIA GPU execution verified: Cuda compilation tools, release 13.3, V13.3.73
+[0;36m[INFO 21:00:24.152][0m  Step 3/11: Building llama.cpp...
+[0;36m[INFO 21:00:24.171][0m    Updating existing llama.cpp source...
+Already up to date.
+[0;36m[INFO 21:00:24.645][0m    Configuring with CUDA support...
+-- llama.cpp version: 0.1.0-dev
+[2m[WORKING] Configuring the llama.cpp build with CMake[0m
+-- ccache found, compilation results will be cached. Disable with GGML_CCACHE=OFF.
+-- CMAKE_SYSTEM_PROCESSOR: x86_64
+-- GGML_SYSTEM_ARCH: x86
+-- Including CPU backend
+-- x86 detected
+-- Adding CPU backend variant ggml-cpu: -march=native 
+-- CUDA Toolkit found
+-- Replacing 120-real in CMAKE_CUDA_ARCHITECTURES_NATIVE with 120a-real
+-- Using CMAKE_CUDA_ARCHITECTURES=120a-real CMAKE_CUDA_ARCHITECTURES_NATIVE=120a-real
+-- Could NOT find NCCL (missing: NCCL_LIBRARY NCCL_INCLUDE_DIR) 
+-- Warning: NCCL not found, performance for multiple CUDA GPUs will be suboptimal
+-- CUDA host compiler is GNU 13.3.0
+-- Including CUDA backend
+-- ggml version: 0.20.0
+-- ggml commit:  4df29be
+-- OpenSSL found: 3.0.13
+-- Generating embedded license file for target: llama-app
+-- Configuring done (10.2s)
+-- Generating done (0.4s)
+-- Build files have been written to: /root/llama.cpp/build
+[0;36m[INFO 21:00:35.341][0m    Compiling with 8 memory-safe parallel jobs (this may take a few minutes)...
+[  0%] Built target llama-common-base
+[  0%] Built target llama-ui-embed
+[  0%] Built target cpp-httplib
+[  2%] Built target ggml-base
+[  2%] Provisioning UI assets
+[  5%] Built target ggml-cpu
+-- UI: npm output up-to-date, skipping build
+[ 37%] Built target ggml-cuda
+[ 37%] Built target ggml
+[ 76%] Built target llama
+-- UI: gzip compression applied (/root/llama.cpp/build/tools/ui/dist/_gzip)
+[ 83%] Built target llama-common
+[ 95%] Built target mtmd
+[ 95%] Built target llama-ui-assets
+[ 97%] Built target llama-ui
+[ 98%] Built target server-context
+[2m[WORKING]   Compiling with 8 memory-safe parallel jobs (this may take a few minutes)...[0m
+[ 98%] Built target llama-server-impl
+[100%] Built target llama-server
+[0;32m[DONE 21:00:37.123][0m  llama.cpp built successfully
+[0;36m[INFO 21:00:37.132][0m  Step 4/11: Finding the best model for your hardware...
+[0;36m[INFO 21:00:37.147][0m    Model budget: 27 GB (GPU: 10 GB, RAM: 62 GB)
+[0;36m[INFO 21:00:37.156][0m    Querying HuggingFace for the best model available RIGHT NOW...
+[2m[WORKING]   Querying HuggingFace for the best model available RIGHT NOW...[0m
+[0;36m[INFO 21:00:43.094][0m    Best models found online right now (best first):
+[0;36m[INFO 21:00:43.104][0m      - RNJ-1 Instruct Q6 (dense agentic coding and tool use) (7.0 GB)
+[0;36m[INFO 21:00:43.113][0m      - Qwen3.6 35B-A3B (multimodal agentic MoE, MTP) (25.3 GB)
+[0;36m[INFO 21:00:43.123][0m      - Qwen3.6-35B-A3B (multimodal agentic MoE) (10.0 GB)
+[0;36m[INFO 21:00:43.132][0m      - Qwen3.6 27B (agentic, MTP) (8.9 GB)
+[0;36m[INFO 21:00:43.141][0m      - North Mini Code 30B-A3B (agentic engineering) (9.8 GB)
+[0;36m[INFO 21:00:43.150][0m      - Qwen3 Coder Next (agentic coding) (26.5 GB)
+[0;32m[DONE 21:00:43.160][0m    Using already-downloaded best model: RNJ-1 Instruct Q6 (dense agentic coding and tool use)
+[0;32m[DONE 21:00:43.169][0m    BEST MODEL SELECTED: RNJ-1 Instruct Q6 (dense agentic coding and tool use)
+[0;36m[INFO 21:00:43.424][0m  Step 5/11: Configuring passwordless sudo...
+[0;32m[DONE 21:00:43.483][0m  Passwordless sudo configured
+[0;32m[DONE 21:00:43.987][0m  WSL-to-Windows executable support is live and protected across systemd starts
+[0;36m[INFO 21:00:43.996][0m  Step 6/11: Installing Windows tools...
+[2m[WORKING] Step 6/11: Installing Windows tools...[0m
+[0;32m[DONE 21:00:44.314][0m  Windows helper parsed and returned live C: drive evidence
+[0;32m[DONE 21:00:44.324][0m  Windows tools installed (win-tools, browse)
+[0;36m[INFO 21:00:44.332][0m  Step 7/11: Installing Playwright for browser automation...
+[0;36m[INFO 21:00:44.341][0m    Downloading Chromium browser (may take a minute)...
+[0;32m[DONE 21:00:44.763][0m  Playwright installed
+[0;36m[INFO 21:00:44.772][0m  Step 8/11: Installing the AI agent (llama-agent v11)...
+[0;32m[DONE 21:00:44.791][0m  AI agent v11 installed
+[0;36m[INFO 21:00:44.802][0m  Step 10/11: Configuring environment...
+[0;32m[DONE 21:00:44.837][0m  Environment configured
+[0;36m[INFO 21:00:44.846][0m  Step 11/11: Running end-to-end tests...
+[0;32m[DONE 21:00:44.854][0m  Test 1/4: llama-server binary exists
+[0;32m[DONE 21:00:44.867][0m  Test 2/4: Model: rnj-1-instruct-UD-Q6_K_XL.gguf (7.0G)
+[2m[WORKING] Compiling and running smoke programs with C, C++, Python, Node, .NET, Java, Go, and Rust[0m
+[0;32m[DONE 21:00:51.552][0m  Toolchain acceptance: 46 commands found; 8 representative languages compiled and ran
+[0;36m[INFO 21:00:51.588][0m    Using isolated dynamic test port 38949; no existing process will be stopped
+[0;36m[INFO 21:00:52.025][0m    The selected model fits fully on the GPU while preserving 3586MB for context and Windows
+[2m[WORKING] Loading the isolated model test on port 38949: 2 seconds elapsed, 24 MB in memory, 0.0% CPU[0m
+[0;32m[DONE 21:00:54.063][0m  Test 3/4: Isolated server starts and responds to health check
+[2m[WORKING] Testing one visible model answer on port 38949: attempt 1, 2 seconds elapsed[0m
+[0;32m[DONE 21:00:56.090][0m  Test 4/4: Model responds: test passed
+[0;32m[DONE 21:00:57.574][0m  Test: win-tools works
+[0;32m[DONE 21:00:57.845][0m  Test: win-tools dir works
+[0;32m[DONE 21:00:57.851][0m  Test: browse command installed
+[0;36m[INFO 21:00:57.860][0m    Testing the extracted agent, routed tools, bounded edits, and cross-session history...
+[2m  [WORKING] [0mConnecting to the local model for this task.
+[2m  [WORKING] [0mThe model is generating the exact command: printf ready. The complete request currently contains 26 characters.
+[2m  [WORKING] [0mThe model sent an invalid partial response. It was ignored; waiting for a complete valid action.
+[2m  [WORKING] [0mThe model is writing the answer now: 7 characters generated; the current line is still being generated.
+[2m[WORKING]   Testing the extracted agent, routed tools, bounded edits, and cross-session history...[0m
+[2m  [WORKING] [0mStarted structured progress fixture; the process has not written output yet.
+[2m  [WORKING] [0m2 files, 1 folder checked; 0 matches; now C:\fixture.
+[2m  [WORKING] [0mStarted printf 'visible pipeline output\n'; false | true; the process has not written output yet.
+[2m  [WORKING] [0mNew output: 1 new line; 1 total lines and 24 characters. Latest output: visible pipeline output.
+[2m  [WORKING] [0mStarted sed -i 's/for i in range(2):/for in range(2):/' guarded.py; the process has not written output yet.
+NATURE_ACCEPTANCE_OK
+[0;32m[DONE 21:01:05.159][0m  Test: syntax, routing, pipefail, complete verification output, no-op strategy guards, bounded writes, safe patches, live progress, browser boundary, and persistent Up/Down history passed
+
+[0;32m[1m============================================================[0m
+[0;32m[1m  ULTIMATE LOCAL AI AGENT v11 - SETUP COMPLETE![0m
+[0;32m[1m============================================================[0m
+
+  [1mGetting started:[0m
+    [0;36msource ~/.bashrc && llama[0m
+
+  [1mCommands:[0m
+    [0;36mllama[0m              Interactive agent (REPL)
+    [0;36mchat[0m               Same thing (alias)
+    [0;36mllama 'task'[0m       Single-shot: do one task and exit
+    [0;36mllama-agent --server[0m   Run as HTTP API server
+    [0;36mbrowse open <url>[0m  Open URL in Chrome (your profile)
+    [0;36mwin-tools scan C[0m   Scan Windows drive
+    [0;36mmodels[0m             List downloaded models
+
+  [1mSlash commands:[0m
+    [0;36m/help[0m                 Show the complete live command catalog
+    [0;36m/status  /doctor[0m      Inspect Nature and test its core capabilities
+    [0;36m/do  /plan  /fix[0m      Execute, plan, debug, review, test, verify, deploy
+    [0;36m/shell  /python[0m       Run direct shell commands or Python
+    [0;36m/browse  /windows[0m     Control the approved browser or Windows PC
+    [0;36m/command add[0m          Create permanent custom slash commands
+
+  [1mPrompt history:[0m Up/Down recalls every submitted prompt across sessions
+  [1mCompletion:[0m     Type / and press Tab to discover commands
+
+  [1mHardware:[0m 16 cores | 62GB RAM | NVIDIA GeForce RTX 5080 (15 GB)
+  [1mModel:[0m    RNJ-1 Instruct Q6 (dense agentic coding and tool use)
+
+  [1mCapabilities:[0m
+    ✓ Auto-executes shell commands from AI output
+    ✓ Writes and reads files autonomously
+    ✓ Runs Python scripts
+    ✓ Passwordless sudo for system admin
+    ✓ Native tool-calling (Qwen3/Gemma3 function calling)
+    ✓ Exact Chrome Profile 2 / Person 1 URL opening and extension identity checks
+    ! Interactive signed-in tab control fails closed unless a privileged bridge is live
+    ✓ Windows drive operations via PowerShell (win-tools)
+    ✓ Windows GUI automation, clipboard, notifications, screenshots+OCR
+    ✓ Media (ffmpeg), documents (pandoc), PDFs (pdftotext), OCR (tesseract)
+    ✓ Databases (sqlite3), network (nmap), GitHub (gh), Docker
+    ✓ Factual English progress: one live status line plus real phase changes, never repeated transcript spam
+    ✓ Unique Windows completion ringtone after every submitted job stops
+    ✓ Fast/balanced/quality profiles with feature-detected llama-server flags
+    ✓ Optional MTP speculative decoding, reported as verified only after benchmarking
+    ✓ Optional vision via mmproj, reported as verified only after a live image probe
+    ✓ Bounded atomic writes, chunked append, and validated structured patches
+    ✓ Task-specific tool routing, JSONL event receipts, and explicit capability states
+    ✓ Persistent slash commands, MCP server registry, metrics, and background jobs
+    ✓ Persistent memory + atomic resumable task checkpoints
+    ✓ Self-verification before final answers
+    ✓ No fixed action-round ceiling for unfinished tasks
+    ✓ Error recovery — retries with different approaches
+    ✓ Exhaustive alternate-method recovery with honest blocker reporting
+
+  [2mRun:  source ~/.bashrc && llama[0m
+
