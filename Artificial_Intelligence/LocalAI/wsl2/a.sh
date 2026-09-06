@@ -6400,6 +6400,7 @@ def parse_live_progress_line(line):
 
 class ProcessTelemetry:
     def __init__(self, label):
+        self.started_at = time.monotonic()
         self.label = _one_line(label, 90)
         self.subject = re.sub(
             r"^(?:Running command|Running Python):\s*",
@@ -6502,6 +6503,13 @@ class ProcessTelemetry:
         )
         worker = active_name or "The command process"
         if structured_key:
+            # Wall-clock throughput includes subprocess startup and quiet time.
+            # Counts are filesystem evidence, never converted into model tokens.
+            file_rate = structured_event["files"] / max(time.monotonic() - self.started_at, 0.001)
+            structured_message = (
+                f"{file_rate:,.0f} files/s avg | update {age:.1f}s ago | "
+                + structured_message
+            )
             return self._event(structured_key, structured_message)
         if new_lines:
             resumed = self._event_key.startswith("quiet:")
@@ -7503,7 +7511,8 @@ class ModelTelemetry:
                 return "n/a"
             return f"{count * 60000 / duration:.1f}"
         ttft = f"{first:.0f} ms" if first is not None else "pending"
-        generation = rate(stats.get('predicted_n'), stats.get('predicted_ms'))
+        generation_n = stats.get('predicted_n')
+        generation = rate(max(0, generation_n - 1) if generation_n is not None else None, stats.get('predicted_ms'))
         if stats.get('predicted_n', 0) > 0 and (
             stats.get('predicted_n', 0) < 2 or stats.get('predicted_ms', 0) < 10
         ):
@@ -10689,6 +10698,7 @@ def get_server_command(model_path, use_draft=True):
     help_text = server_help(binary)
     gpu_layers = 0
     fit_target_mib = 0
+    cpu_kv_offload = False
     if total_vram_mib > 0:
         # Protect real free VRAM, not just nominal capacity. Full offload wins
         # when the model, a context/work allowance, and the protected margin all
@@ -10701,6 +10711,15 @@ def get_server_command(model_path, use_draft=True):
         context_work_mib = 1024 if int(ctx_size) <= 32768 else 2048
         if model_mib + context_work_mib + fit_target_mib <= free_vram_mib:
             gpu_layers = 999
+        elif ("qwen3.8-27b" in model_name and "iq3_xxs" in model_name
+              and model_mib <= 12000 and free_vram_mib >= 10500
+              and "--no-kv-offload" in help_text):
+            # Verified on the 16 GB RTX 5080: avoid hybrid GPU state-cache OOM
+            # while offloading most weights. Keep the existing CPU recovery path.
+            gpu_layers = 56 if free_vram_mib >= 12000 else 48
+            cpu_kv_offload = True
+            ctx_size = "16384"
+            use_draft = False
         elif supports_auto and not any(name in model_name for name in ("qwen3.6", "qwen3.8")):
             gpu_layers = "auto"
         else:
@@ -10721,6 +10740,8 @@ def get_server_command(model_path, use_draft=True):
         "--jinja",
         "--n-gpu-layers", str(gpu_layers),
     ]
+    if cpu_kv_offload:
+        base_args += ["--no-kv-offload"]
     if gpu_layers == "auto":
         base_args += ["--fit", "on", "--fit-target", str(fit_target_mib)]
 
@@ -19616,12 +19637,10 @@ with tempfile.TemporaryDirectory() as exact_intent_dir:
         )
         checkpoint_event = process.report(17)
         assert checkpoint_event[0].startswith("tool-progress:"), checkpoint_event
-        assert checkpoint_event[1].startswith(
-            "1,284 files, 37 folders checked"
-        ), checkpoint_event
+        assert "1,284 files, 37 folders checked" in checkpoint_event[1], checkpoint_event
         checkpoint_tick = process.report(18)
         assert checkpoint_tick[0] == checkpoint_event[0], checkpoint_tick
-        assert checkpoint_tick[1] == checkpoint_event[1], checkpoint_tick
+        assert "files/s avg" in checkpoint_tick[1] and "1,284 files" in checkpoint_tick[1], checkpoint_tick
     finally:
         nature._process_group_stats = original_group_stats
         nature._process_group_io_stats = original_group_io_stats
@@ -20049,6 +20068,21 @@ with tempfile.TemporaryDirectory(prefix="nature-vram-start-") as gpu_fixture:
         assert "--model-draft" not in constrained
         with patch.object(nature, "detect_gpu_memory_mib", return_value=(24576, 24000)):
             assert nature._gpu_layer_value(nature.get_server_command(hybrid_model)) == "999"
+    tested_model = Path(gpu_fixture) / "Qwen3.8-27B-UD-IQ3_XXS.gguf"
+    with tested_model.open("wb") as sparse:
+        sparse.truncate(11 * 1024 ** 3)
+    with patch.object(nature, "detect_gpu_memory_mib", return_value=(16303, 10600)), \
+         patch.object(nature, "server_help", return_value="--no-kv-offload --fit-target 'auto'"), \
+         patch.object(nature, "find_binary", return_value=Path("/fixture/llama-server")), \
+         patch.object(nature, "find_mmproj", return_value=None), \
+         patch.object(nature, "find_draft_model", return_value=None):
+        tuned = nature.get_server_command(tested_model)
+        assert nature._gpu_layer_value(tuned) == "48", tuned
+        assert "--no-kv-offload" in tuned
+        with patch.object(nature, "detect_gpu_memory_mib", return_value=(16303, 12500)):
+            assert nature._gpu_layer_value(nature.get_server_command(tested_model)) == "56"
+        with patch.object(nature, "detect_gpu_memory_mib", return_value=(16303, 9000)):
+            assert nature._gpu_layer_value(nature.get_server_command(tested_model)) == "0"
 # A healthy CPU server remains compatible when its optional draft was disabled.
 import os
 import sys
@@ -20152,21 +20186,28 @@ with patch.object(nature.time, "monotonic", return_value=10.25):
 assert speed.first_token_ms == 250
 assert "TG n/a T/m" in speed.speed_summary()  # chunks are not tokens
 speed.update_timings({"prompt_n": 20, "prompt_ms": 200, "predicted_n": 30, "predicted_ms": 1500})
-assert "TG 1200.0 T/m" in speed.speed_summary()
+assert "TG 1160.0 T/m" in speed.speed_summary()
 with patch.object(nature.time, "monotonic", return_value=10):
     first_sample = nature.ModelTelemetry(1, 0, 1)
 first_sample.update_timings({"predicted_n": 1, "predicted_ms": 0.001})
 assert "warming up" in first_sample.speed_summary()
 assert "TTFT 250 ms" in speed.speed_summary()
 speed.update_timings({"predicted_ms": float("nan"), "predicted_n": -5})
-assert "TG 1200.0 T/m" in speed.speed_summary()
+assert "TG 1160.0 T/m" in speed.speed_summary()
 with patch.object(nature, "_live_local_model_slot_progress", side_effect=AssertionError("Redundant slot poll")):
-    assert "TG 1200.0 T/m" in speed.report(2)[1]
+    assert "TG 1160.0 T/m" in speed.report(2)[1]
 assert nature.direct_largest_files_request("find and output top 10 hevieast files all over f drive") == ("F", 10)
 assert "win-tools files F 10" in nature.plan_hint("find and output top 10 hevieast files all over f drive")[1]
 tool_speed_row = nature.LiveProgress()
 assert "0 T/m (model idle)" in tool_speed_row._format_line(1, "651,088 files measured")
 assert "model idle" not in tool_speed_row._format_line(1, "PP 6000 T/m | TG 1200 T/m")
+scan_speed = nature.ProcessTelemetry("file scan")
+scan_speed.update("LLAMA_PROGRESS|files|scanning|F|20|1000|0|F:\\fixture", "stdout")
+with patch.object(nature.time, "monotonic", return_value=scan_speed.started_at + 10):
+    assert "100 files/s avg" in scan_speed.report(10)[1]
+with patch.object(nature.time, "monotonic", return_value=scan_speed.started_at + 20):
+    assert "50 files/s avg" in scan_speed.report(20)[1]  # quiet time reduces throughput
+assert "update " in scan_speed.report(20)[1]
 print("NATURE_SPEED_ACCEPTANCE_OK")
 print("NATURE_QUESTION_ACCEPTANCE_OK")
 print("NATURE_ACCEPTANCE_OK")
