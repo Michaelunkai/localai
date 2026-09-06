@@ -3218,7 +3218,7 @@ def _bounded_env_float(name, default, minimum, maximum):
 # at least four times per second and make a user-visible English report at least
 # once per second, even when environment overrides request a slower cadence.
 LIVE_REFRESH_SECONDS = _bounded_env_float(
-    "LLAMA_LIVE_REFRESH_SECONDS", 0.10, 0.05, 0.25
+    "LLAMA_LIVE_REFRESH_SECONDS", 0.001, 0.001, 0.25
 )
 LIVE_LOG_HEARTBEAT_SECONDS = _bounded_env_float(
     "LLAMA_LIVE_LOG_HEARTBEAT_SECONDS", 1.0, 0.25, 1.0
@@ -3955,6 +3955,8 @@ class LiveProgress:
         self._stop = threading.Event()
         self._thread = None
         self._reporter = None
+        self._report_snapshot = None
+        self._report_sampled_at = 0.0
         self._last_event_key = None
         self._last_message = ""
         self._last_rendered = ""
@@ -4015,6 +4017,8 @@ class LiveProgress:
         self._bind_stream()
         self.set(message)
         self._reporter = reporter
+        self._report_snapshot = None
+        self._report_sampled_at = 0.0
         self._started = time.monotonic()
         self._last_event_key = None
         self._last_message = ""
@@ -4036,8 +4040,9 @@ class LiveProgress:
     def _format_line(self, elapsed, message):
         prefix = "  [WORKING] "
         if "T/m" not in message:
-            message = "0 T/m (model idle) | " + message
+            message += " | T/m n/a (tool work)"
         if self._interactive:
+            prefix += f"{elapsed * 1000:.0f} ms | "
             try:
                 width = os.get_terminal_size(self._stream.fileno()).columns
             except Exception:
@@ -4084,7 +4089,13 @@ class LiveProgress:
         elapsed = int(raw_elapsed)
         if reporter is not None:
             try:
-                event_key, message = progress_event(reporter(elapsed))
+                # Expensive probes sample separately from the requested 1 ms display.
+                sample_now = time.monotonic()
+                sample_interval = 0.05 if isinstance(getattr(reporter, "__self__", None), ProcessTelemetry) else 0.0
+                if force or self._report_snapshot is None or sample_now - self._report_sampled_at >= sample_interval:
+                    self._report_snapshot = progress_event(reporter(elapsed))
+                    self._report_sampled_at = sample_now
+                event_key, message = self._report_snapshot
             except Exception as exc:
                 event_key = f"telemetry-error:{type(exc).__name__}"
                 message = (
@@ -4112,7 +4123,7 @@ class LiveProgress:
                 f"{message.rstrip('.')}. No newer failure or completion signal "
                 "has arrived, so this operation remains active."
             )
-        rendered = self._format_line(elapsed, display_message)
+        rendered = self._format_line(raw_elapsed, display_message)
         with self._output_lock:
             if rendered == self._last_rendered:
                 self._last_event_key = event_key
@@ -4130,7 +4141,7 @@ class LiveProgress:
                 self._last_rendered = rendered
                 return
             if self._interactive:
-                if force or event_changed or message_changed or heartbeat_due:
+                if rendered != self._last_rendered:
                     self._write_transient(rendered)
                     self._last_visible_at = now
             elif (
@@ -4171,6 +4182,8 @@ class LiveProgress:
             self._clear_transient()
         self._thread = None
         self._reporter = None
+        self._report_snapshot = None
+        self._report_sampled_at = 0.0
         if self._owns_stream:
             try:
                 self._stream.close()
@@ -17600,7 +17613,7 @@ interactive_heartbeat_lines = [
 ]
 assert len(interactive_heartbeat_lines) >= 3, interactive_heartbeat_lines
 assert any(
-    "Still working:" in line for line in interactive_heartbeat_lines
+    " ms | " in line for line in interactive_heartbeat_lines
 ), interactive_heartbeat_lines
 assert "Observation" not in interactive_heartbeat_capture.getvalue(), (
     interactive_heartbeat_capture.getvalue()
@@ -17647,14 +17660,15 @@ tty_progress.start(
 tty_progress.refresh()
 tty_progress.refresh()
 tty_state["message"] = "One new verified result arrived."
-tty_progress.refresh()
+tty_progress.refresh(force=True)
 tty_state["message"] = "The controlled stream has started."
-tty_progress.refresh()
+tty_progress.refresh(force=True)
 tty_progress.stop()
 tty_output = tty_capture.getvalue()
 assert tty_output.count("\n") == 0, repr(tty_output)
-assert tty_output.count("[WORKING]") == 2, repr(tty_output)
-assert tty_output.count("\r\033[2K") == 3, repr(tty_output)
+assert tty_output.count("[WORKING]") >= 2, repr(tty_output)
+assert "One new verified result arrived." in tty_output
+assert tty_output.count("\r\033[2K") >= 3, repr(tty_output)
 assert tty_output.endswith("\r\033[2K"), repr(tty_output)
 nature.LiveProgress.begin_job()
 next_job_capture = io.StringIO()
@@ -17665,7 +17679,7 @@ next_job_progress.start((
     "The controlled stream has started.",
 ))
 next_job_progress.stop()
-assert next_job_capture.getvalue().count("[WORKING]") == 1
+assert next_job_capture.getvalue().count("[WORKING]") >= 1
 live_progress_source = agent_source[
     agent_source.index("class LiveProgress:"):
     agent_source.index("\nLIVE = LiveProgress()")
@@ -20199,7 +20213,7 @@ with patch.object(nature, "_live_local_model_slot_progress", side_effect=Asserti
 assert nature.direct_largest_files_request("find and output top 10 hevieast files all over f drive") == ("F", 10)
 assert "win-tools files F 10" in nature.plan_hint("find and output top 10 hevieast files all over f drive")[1]
 tool_speed_row = nature.LiveProgress()
-assert "0 T/m (model idle)" in tool_speed_row._format_line(1, "651,088 files measured")
+assert "T/m n/a (tool work)" in tool_speed_row._format_line(1, "651,088 files measured")
 assert "model idle" not in tool_speed_row._format_line(1, "PP 6000 T/m | TG 1200 T/m")
 scan_speed = nature.ProcessTelemetry("file scan")
 scan_speed.update("LLAMA_PROGRESS|files|scanning|F|20|1000|0|F:\\fixture", "stdout")
@@ -20208,6 +20222,19 @@ with patch.object(nature.time, "monotonic", return_value=scan_speed.started_at +
 with patch.object(nature.time, "monotonic", return_value=scan_speed.started_at + 20):
     assert "50 files/s avg" in scan_speed.report(20)[1]  # quiet time reduces throughput
 assert "update " in scan_speed.report(20)[1]
+assert nature.LIVE_REFRESH_SECONDS == 0.001
+millisecond_capture = io.StringIO()
+millisecond_live = nature.LiveProgress(stream=millisecond_capture, interactive=True)
+millisecond_live._bind_stream()
+millisecond_live._started = 100.0
+millisecond_live._reporter = lambda elapsed: ("speed-fixture", "TG 600 T/m")
+with patch.object(nature.time, "monotonic", return_value=100.001):
+    millisecond_live.refresh(force=True)
+with patch.object(nature.time, "monotonic", return_value=100.002):
+    millisecond_live.refresh()
+assert "1 ms |" in millisecond_capture.getvalue()
+assert "2 ms |" in millisecond_capture.getvalue()
+assert millisecond_capture.getvalue().count("TG 600 T/m") == 2
 print("NATURE_SPEED_ACCEPTANCE_OK")
 print("NATURE_QUESTION_ACCEPTANCE_OK")
 print("NATURE_ACCEPTANCE_OK")
