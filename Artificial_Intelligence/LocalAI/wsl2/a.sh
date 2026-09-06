@@ -4131,7 +4131,9 @@ class LiveProgress:
             # the once-per-second English report indefinitely.
             if self._interactive and now - self._last_english_at >= 1.0:
                 self._clear_transient()
-                print(f"  [PROGRESS] {raw_elapsed:.1f} seconds elapsed. {_one_line(message, 700)}",
+                owner = getattr(reporter, "__self__", None)
+                narrative = owner.english_report() if hasattr(owner, "english_report") else message
+                print(f"  [PROGRESS] {raw_elapsed:.1f} seconds elapsed. {_one_line(narrative, 700)}",
                       file=self._stream, flush=True)
                 self._last_english_at = now
             if rendered == self._last_rendered:
@@ -5637,6 +5639,8 @@ class TaskState:
             "output_hash": output_hash,
             "repeats": repeats,
             "sequence": self.sequence + 1,
+            "completed_scan": bool(success and re.fullmatch(r"win-tools\s+(?:files|scan)\s+[A-Za-z](?:\s+\d+)?", (call.get("cmd") or "").strip())),
+            "mutation_epoch": self.mutations,
         }
         if len(self.fingerprints) > TASK_FINGERPRINT_LIMIT:
             oldest = min(
@@ -5765,6 +5769,10 @@ class TaskState:
             _call_fingerprint(call, user_message)
         ) or {}
         return int(previous.get("repeats", 0))
+
+    def scan_already_completed(self, call, user_message=""):
+        previous = self.fingerprints.get(_call_fingerprint(call, user_message)) or {}
+        return bool(previous.get("completed_scan") and previous.get("mutation_epoch") == self.mutations)
 
     def action_was_interrupted(self, call, user_message=""):
         return (
@@ -6423,6 +6431,7 @@ def parse_live_progress_line(line):
 class ProcessTelemetry:
     def __init__(self, label):
         self.started_at = time.monotonic()
+        self.english_files = self.english_directories = 0
         self.label = _one_line(label, 90)
         self.subject = re.sub(
             r"^(?:Running command|Running Python):\s*",
@@ -6448,6 +6457,21 @@ class ProcessTelemetry:
         self._event_key = ""
         self._event_message = ""
         self.lock = threading.Lock()
+
+    def english_report(self):
+        with self.lock:
+            record = self.structured_event
+            if not record:
+                return self._event_message or f"Waiting for output from {self.subject}."
+            files = record["files"]
+            directories = record["directories"]
+            new_files = max(0, files - self.english_files)
+            new_dirs = max(0, directories - self.english_directories)
+            self.english_files, self.english_directories = files, directories
+            age = max(0, time.monotonic() - (self.last_output_at or self.started_at))
+            return (f"Measured {new_files:,} additional files and {new_dirs:,} additional folders; "
+                    f"{files:,} files total. Current location: {record['current_path']}. "
+                    f"Latest checkpoint {age:.1f}s ago.")
 
     def _event(self, key, message):
         """Keep the last factual process state until new evidence changes it."""
@@ -7464,6 +7488,7 @@ class ModelTelemetry:
         self.connected = False
         self.started_at = time.monotonic()
         self.first_token_ms = None
+        self.english_tokens = 0
         self.server_timings = {}
         self.chunks = 0
         self.reasoning_chars = 0
@@ -7509,6 +7534,19 @@ class ModelTelemetry:
         with self.lock:
             self.prompt_progress = dict(progress or {})
             self.last_event_at = time.monotonic()
+
+    def english_report(self):
+        with self.lock:
+            count = self.server_timings.get("predicted_n", 0)
+            added = max(0, count - self.english_tokens)
+            self.english_tokens = count
+            progress = dict(self.prompt_progress)
+        if count:
+            return f"Generated {added:.0f} additional tokens ({count:.0f} total). {self.speed_summary()}"
+        if progress:
+            return (f"Preparing the prompt: {progress.get('processed', 0):,} of "
+                    f"{progress.get('total', 0):,} tokens processed. {self.speed_summary()}")
+        return f"Waiting for the model's first measured output. {self.speed_summary()}"
 
     def update_timings(self, timings):
         if not isinstance(timings, dict):
@@ -12784,7 +12822,12 @@ def resolve_scan_followup(user_message, conversation):
         r"(?:from|for|on|in)\s+(?:the\s+)?([a-z])(?:\s*:\s*|\s+drive)?[.!?\s]*",
         user_message or "", re.IGNORECASE,
     )
-    if not match:
+    count_match = re.fullmatch(
+        r"\s*(?:now\s+)?(?:the\s+)?top\s+(\d+)(?:\s+files)?"
+        r"(?:\s*[,;]?\s*(?:each|every)\s+(\d+)\s+in\s+(?:different\s+)?colou?rs?)?[.!?\s]*",
+        user_message or "", re.IGNORECASE,
+    )
+    if not match and not count_match:
         return user_message
     # Stop at the nearest actual user turn; unrelated intervening requests must
     # not silently resurrect an older scan. Runtime hints use bracket prefixes.
@@ -12797,6 +12840,10 @@ def resolve_scan_followup(user_message, conversation):
         previous = previous.splitlines()[0]
         request = direct_largest_files_request(previous)
         if request:
+            if count_match:
+                count = max(1, min(200, int(count_match.group(1))))
+                style = f", each {int(count_match.group(2))} in different colors" if count_match.group(2) else ""
+                return f"Find and output the top {count} largest files on {request[0]} drive{style}."
             return f"Find and output the top {request[1]} largest files on {match.group(1).upper()} drive."
         break
     return user_message
@@ -13106,7 +13153,12 @@ def deterministic_filename_answer(output, requested_filename):
     return "The verified full paths are:\n" + "\n".join(paths)
 
 
-def deterministic_largest_files_answer(output, drive, requested_count):
+def largest_file_color_group(objective):
+    match = re.search(r"\b(?:each|every)\s+(\d+)\s+in\s+(?:different\s+)?colou?rs?\b", objective, re.I)
+    return max(1, min(200, int(match.group(1)))) if match else None
+
+
+def deterministic_largest_files_answer(output, drive, requested_count, color_group=None):
     """Render the measured Windows file ranking without another model round."""
     rows = []
     for line in (output or "").splitlines():
@@ -13133,6 +13185,8 @@ def deterministic_largest_files_answer(output, drive, requested_count):
         "",
     ]
     for index, (path, byte_size, human_size) in enumerate(rows, 1):
+        if color_group and (index - 1) % color_group == 0:
+            lines.append(f"### Files {index}-{min(index + color_group - 1, len(rows))}")
         lines.append(
             f"{index}. {human_size} ({byte_size:,} bytes) | {path}"
         )
@@ -13409,7 +13463,8 @@ def _agent_turn_active(user_message, conversation, resume_payload=None):
                 )
                 if success:
                     answer = deterministic_largest_files_answer(
-                        seeded, drive, count
+                        seeded, drive, count,
+                        color_group=largest_file_color_group(original_objective),
                     )
                     conversation.append({"role": "assistant", "content": answer})
                     finish_task(state, conversation)
@@ -13979,6 +14034,15 @@ def _agent_turn_active(user_message, conversation, resume_payload=None):
                         ),
                         False,
                     )
+                    success, repeats = False, 1
+                elif state.scan_already_completed(call, original_objective):
+                    result_str = (
+                        "[SCAN REPLAY BLOCKED: This scan already succeeded in this task. "
+                        "Use its existing result to answer or format the requested output. "
+                        "No second drive traversal was executed.]"
+                    )
+                    state.record("loop-guard", "blocked a completed scan before a redundant traversal", False)
+                    state.no_progress_rounds += 1
                     success, repeats = False, 1
                 elif state.identical_result_repeats(
                     call, original_objective
@@ -15116,6 +15180,20 @@ def _print_table(title, headers, rows):
         print()
 
 def _render_assistant(text):
+    if (text or "").startswith("Verified ") and "### Files " in text:
+        from rich.console import Console
+        from rich.text import Text
+        palette = ["cyan", "green", "yellow", "magenta", "bright_blue",
+                   "bright_red", "bright_cyan", "bright_green", "bright_yellow", "bright_magenta"]
+        console = Console()
+        group = -1
+        for line in text.splitlines():
+            if re.fullmatch(r"### Files \d+-\d+", line):
+                group += 1
+                console.print(Text(line.removeprefix("### "), style="bold " + palette[group % len(palette)]))
+            else:
+                console.print(Text(line, style=palette[group % len(palette)] if group >= 0 else ""))
+        return
     try:
         from rich.console import Console
         from rich.markdown import Markdown
@@ -20310,6 +20388,29 @@ with tempfile.TemporaryDirectory(prefix="nature-followup-test-") as followup_dir
             assert f"Verified 10 largest files on drive {drive}" in answer, answer
             assert not nature.ACTIVE_TASK_FILE.exists()
         assert calls == ["win-tools files F 10", "win-tools files C 10", "win-tools files D 10", "win-tools files E 10"], calls
+        colored_answer = nature.agent_turn("now top 200, each 20 in different colors", conversation)
+        assert calls[-1] == "win-tools files E 200" and len(calls) == 5, calls
+        assert colored_answer.count("### Files ") == 10
+        assert "### Files 181-200" in colored_answer
+        assert "200. " in colored_answer
+        from rich.console import Console as TestConsole
+        colored_capture = io.StringIO()
+        with patch("rich.console.Console", return_value=TestConsole(file=colored_capture, force_terminal=True, width=200)):
+            nature._render_assistant(colored_answer)
+        assert "\x1b[" in colored_capture.getvalue()
+        assert "Files 181-200" in colored_capture.getvalue()
+        assert len(set(nature.re.findall(r"\x1b\[([0-9;]+)m", colored_capture.getvalue()))) >= 10
+scan_guard = nature.TaskState("top 200 largest files on C drive")
+scan_call = {"type": "command", "cmd": "win-tools files C 200"}
+scan_guard.observe_tool(scan_call, "C:\\one.bin|10|10 B", scan_guard.objective)
+assert scan_guard.scan_already_completed(scan_call, scan_guard.objective)
+assert not scan_guard.scan_already_completed({"type": "command", "cmd": "win-tools files D 200"}, scan_guard.objective)
+scan_guard.mutations += 1
+assert not scan_guard.scan_already_completed(scan_call, scan_guard.objective)
+assert "Measured 1,000 additional files" in scan_speed.english_report()
+assert "Measured 0 additional files" in scan_speed.english_report()
+assert "Generated 30 additional tokens" in speed.english_report()
+assert "Generated 0 additional tokens" in speed.english_report()
 print("NATURE_FOLLOWUP_ACCEPTANCE_OK")
 print("NATURE_SPEED_ACCEPTANCE_OK")
 print("NATURE_QUESTION_ACCEPTANCE_OK")
