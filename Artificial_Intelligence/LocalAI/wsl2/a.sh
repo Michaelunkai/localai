@@ -7506,8 +7506,8 @@ class ModelTelemetry:
             stats.get('predicted_n', 0) < 2 or stats.get('predicted_ms', 0) < 10
         ):
             generation = "warming up"
-        return (f"PP {rate(prompt_n, prompt_ms)} tok/s | "
-                f"TG {generation} tok/s | "
+        return (f"PP {rate(prompt_n, prompt_ms)} T/s | "
+                f"TG {generation} T/s | "
                 f"TTFT {ttft} | {max(0, time.monotonic() - self.started_at) * 1000:.0f} ms")
 
     def update(self, delta, snapshot=False):
@@ -20142,24 +20142,24 @@ print("NATURE_TASKBAR_ACCEPTANCE_OK")
 assert nature._prepare_stream_body({})["timings_per_token"] is True
 with patch.object(nature.time, "monotonic", return_value=10):
     speed = nature.ModelTelemetry(1, 0, 1, probe_slots=True)
-assert "TG n/a tok/s" in speed.speed_summary()
+assert "TG n/a T/s" in speed.speed_summary()
 speed.update_prompt_progress({"processed": 120, "cache": 100, "time_ms": 200})
-assert "PP 100.0 tok/s" in speed.speed_summary()
+assert "PP 100.0 T/s" in speed.speed_summary()
 with patch.object(nature.time, "monotonic", return_value=10.25):
     speed.update({"content": "Multiple words in one chunk"})
 assert speed.first_token_ms == 250
-assert "TG n/a tok/s" in speed.speed_summary()  # chunks are not tokens
+assert "TG n/a T/s" in speed.speed_summary()  # chunks are not tokens
 speed.update_timings({"prompt_n": 20, "prompt_ms": 200, "predicted_n": 30, "predicted_ms": 1500})
-assert "TG 20.0 tok/s" in speed.speed_summary()
+assert "TG 20.0 T/s" in speed.speed_summary()
 with patch.object(nature.time, "monotonic", return_value=10):
     first_sample = nature.ModelTelemetry(1, 0, 1)
 first_sample.update_timings({"predicted_n": 1, "predicted_ms": 0.001})
 assert "warming up" in first_sample.speed_summary()
 assert "TTFT 250 ms" in speed.speed_summary()
 speed.update_timings({"predicted_ms": float("nan"), "predicted_n": -5})
-assert "TG 20.0 tok/s" in speed.speed_summary()
+assert "TG 20.0 T/s" in speed.speed_summary()
 with patch.object(nature, "_live_local_model_slot_progress", side_effect=AssertionError("Redundant slot poll")):
-    assert "TG 20.0 tok/s" in speed.report(2)[1]
+    assert "TG 20.0 T/s" in speed.report(2)[1]
 print("NATURE_SPEED_ACCEPTANCE_OK")
 print("NATURE_QUESTION_ACCEPTANCE_OK")
 print("NATURE_ACCEPTANCE_OK")
