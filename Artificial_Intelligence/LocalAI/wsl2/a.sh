@@ -3218,7 +3218,7 @@ def _bounded_env_float(name, default, minimum, maximum):
 # at least four times per second and make a user-visible English report at least
 # once per second, even when environment overrides request a slower cadence.
 LIVE_REFRESH_SECONDS = _bounded_env_float(
-    "LLAMA_LIVE_REFRESH_SECONDS", 0.25, 0.05, 0.25
+    "LLAMA_LIVE_REFRESH_SECONDS", 0.10, 0.05, 0.25
 )
 LIVE_LOG_HEARTBEAT_SECONDS = _bounded_env_float(
     "LLAMA_LIVE_LOG_HEARTBEAT_SECONDS", 1.0, 0.25, 1.0
@@ -7430,6 +7430,9 @@ class ModelTelemetry:
         self.attempt = attempt
         self.probe_slots = bool(probe_slots)
         self.connected = False
+        self.started_at = time.monotonic()
+        self.first_token_ms = None
+        self.server_timings = {}
         self.chunks = 0
         self.reasoning_chars = 0
         self.content_chars = 0
@@ -7475,6 +7478,38 @@ class ModelTelemetry:
             self.prompt_progress = dict(progress or {})
             self.last_event_at = time.monotonic()
 
+    def update_timings(self, timings):
+        if not isinstance(timings, dict):
+            return
+        with self.lock:
+            for key in ("prompt_n", "prompt_ms", "predicted_n", "predicted_ms", "cache_n"):
+                value = timings.get(key)
+                if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
+                    self.server_timings[key] = value
+
+    def speed_summary(self):
+        with self.lock:
+            stats = dict(self.server_timings)
+            progress = dict(self.prompt_progress)
+            first = self.first_token_ms
+        prompt_n, prompt_ms = stats.get("prompt_n"), stats.get("prompt_ms")
+        if prompt_n is None and isinstance(progress.get("time_ms"), (int, float)):
+            prompt_ms = progress["time_ms"]
+            prompt_n = max(0, int(progress.get("processed") or 0) - int(progress.get("cache") or 0))
+        def rate(count, duration):
+            if count is None or duration is None or not math.isfinite(duration) or duration <= 0:
+                return "n/a"
+            return f"{count * 1000 / duration:.1f}"
+        ttft = f"{first:.0f} ms" if first is not None else "pending"
+        generation = rate(stats.get('predicted_n'), stats.get('predicted_ms'))
+        if stats.get('predicted_n', 0) > 0 and (
+            stats.get('predicted_n', 0) < 2 or stats.get('predicted_ms', 0) < 10
+        ):
+            generation = "warming up"
+        return (f"PP {rate(prompt_n, prompt_ms)} tok/s | "
+                f"TG {generation} tok/s | "
+                f"TTFT {ttft} | {max(0, time.monotonic() - self.started_at) * 1000:.0f} ms")
+
     def update(self, delta, snapshot=False):
         with self.lock:
             now = time.monotonic()
@@ -7512,6 +7547,8 @@ class ModelTelemetry:
             )
             if reasoning or content or delta.get("tool_calls"):
                 self.last_event_at = now
+                if self.first_token_ms is None:
+                    self.first_token_ms = max(0, now - self.started_at) * 1000
 
     def report(self, elapsed):
         with self.lock:
@@ -7585,7 +7622,8 @@ class ModelTelemetry:
         def with_task_context(message):
             # Keep the live fact first. Terminal status lines are narrow, and
             # leading with counters hid the current action behind an ellipsis.
-            return f"{message} {task_prefix}".strip()
+            speed = self.speed_summary() + " | " if self.probe_slots else ""
+            return f"{speed}{message} {task_prefix}".strip()
 
         if prompt_progress and not tool_names and not content_chars and not reasoning_chars:
             total = int(prompt_progress.get("total") or 0)
@@ -7597,7 +7635,11 @@ class ModelTelemetry:
                     f"Local model prompt: {percent}% ({processed:,}/{total:,} tokens)."
                 ),
             )
-        slot_progress = _live_local_model_slot_progress() if probe_slots else {}
+        # The request's own stream is both cheaper and more precise than polling
+        # global slots once it is producing semantic data.
+        slot_progress = _live_local_model_slot_progress() if probe_slots and not (
+            content_chars or reasoning_chars or tool_names
+        ) else {}
         if slot_progress:
             active_slots = int(slot_progress.get("active_slots") or 0)
             total = int(slot_progress.get("total") or 0)
@@ -7732,6 +7774,7 @@ def _prepare_stream_body(body):
     stream_body.update({
         "stream": True,
         "return_progress": True,
+        "timings_per_token": True,
         "sse_ping_interval": 1,
         "parse_tool_calls": True,
         "parallel_tool_calls": False,
@@ -7804,6 +7847,7 @@ def api_chat_stream(body, attempt):
                     "The model stream ended with a server error: "
                     + _one_line(str(detail), 800)
                 )
+            telemetry.update_timings(event.get("timings"))
             progress = event.get("prompt_progress")
             if isinstance(progress, dict):
                 telemetry.update_prompt_progress(progress)
@@ -7993,7 +8037,9 @@ def api_chat_stream(body, attempt):
                     "Failed to parse tool call arguments as JSON object: "
                     f"received {type(parsed_arguments).__name__}"
                 )
-        return {"choices": [{"message": message, "finish_reason": finish_reason}]}
+        ui_event("speed", telemetry.speed_summary(), "info")
+        return {"choices": [{"message": message, "finish_reason": finish_reason}],
+                "timings": dict(telemetry.server_timings), "ttft_ms": telemetry.first_token_ms}
     except urllib.error.HTTPError as exc:
         try:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -14296,7 +14342,10 @@ def direct_question_turn(user_message, conversation, resume_payload=None):
             return "[Task cancelled by the operator; no completion was claimed.]"
     finally:
         CURRENT_TASK_STATE = CURRENT_CONVERSATION = None
-        ui_event("timing", f"Question turn took {time.monotonic() - started:.2f}s.", "info")
+        elapsed_ms = (time.monotonic() - started) * 1000
+        direct = direct_question_kind(user_message) in {"identity", "windows-program"}
+        ui_event("timing", f"Question turn took {elapsed_ms:.0f} ms."
+                 + (" Model not used; token speed n/a." if direct else ""), "info")
 
 
 def build_system_prompt():
@@ -17396,9 +17445,9 @@ try:
         slot_telemetry.connected = True
         slot_status = slot_telemetry.report(22)
         assert slot_status[0] == "model-slot:1", slot_status
-        assert slot_status[1].startswith(
+        assert (
             "Local model prompt: 2% (89/3,635 tokens); slot 3, task 173."
-        ), slot_status
+        ) in slot_status[1], slot_status
         assert "Round 13, 22 seconds elapsed" in slot_status[1], slot_status
         nature._live_local_model_slot_progress = lambda: {
             "active_slots": 1,
@@ -17414,10 +17463,10 @@ try:
         generation_telemetry.connected = True
         generation_status = generation_telemetry.report(23)
         assert generation_status[0] == "model-generation:1", generation_status
-        assert generation_status[1].startswith(
+        assert (
             "Local model generation: 60 decoded tokens; 8,132 response-budget "
             "tokens remain; slot 3, task 173."
-        ), generation_status
+        ) in generation_status[1], generation_status
     finally:
         nature._live_local_model_slot_progress = original_slot_progress
     reasoning_telemetry = nature.ModelTelemetry(21, 3, 1)
@@ -20090,6 +20139,28 @@ with tempfile.TemporaryDirectory(prefix="nature-pin-test-") as pin_dir:
         assert not nature.ACTIVE_TASK_FILE.exists()
         assert nature.CURRENT_TASK_STATE is None
 print("NATURE_TASKBAR_ACCEPTANCE_OK")
+assert nature._prepare_stream_body({})["timings_per_token"] is True
+with patch.object(nature.time, "monotonic", return_value=10):
+    speed = nature.ModelTelemetry(1, 0, 1, probe_slots=True)
+assert "TG n/a tok/s" in speed.speed_summary()
+speed.update_prompt_progress({"processed": 120, "cache": 100, "time_ms": 200})
+assert "PP 100.0 tok/s" in speed.speed_summary()
+with patch.object(nature.time, "monotonic", return_value=10.25):
+    speed.update({"content": "Multiple words in one chunk"})
+assert speed.first_token_ms == 250
+assert "TG n/a tok/s" in speed.speed_summary()  # chunks are not tokens
+speed.update_timings({"prompt_n": 20, "prompt_ms": 200, "predicted_n": 30, "predicted_ms": 1500})
+assert "TG 20.0 tok/s" in speed.speed_summary()
+with patch.object(nature.time, "monotonic", return_value=10):
+    first_sample = nature.ModelTelemetry(1, 0, 1)
+first_sample.update_timings({"predicted_n": 1, "predicted_ms": 0.001})
+assert "warming up" in first_sample.speed_summary()
+assert "TTFT 250 ms" in speed.speed_summary()
+speed.update_timings({"predicted_ms": float("nan"), "predicted_n": -5})
+assert "TG 20.0 tok/s" in speed.speed_summary()
+with patch.object(nature, "_live_local_model_slot_progress", side_effect=AssertionError("Redundant slot poll")):
+    assert "TG 20.0 tok/s" in speed.report(2)[1]
+print("NATURE_SPEED_ACCEPTANCE_OK")
 print("NATURE_QUESTION_ACCEPTANCE_OK")
 print("NATURE_ACCEPTANCE_OK")
 PYTESTEOF

@@ -57,6 +57,12 @@ The parser no longer converts natural language such as `path to exe` into `to.ex
 
 On the development Windows/WSL machine on 2026-09-06, the exact Daymark taskbar lookup returned the same verified target in **2.914, 0.312, and 0.373 seconds**, versus the reported failed workflow still running after 454 seconds. The real `llm` interactive `/resume` also completed the previously stuck Daymark request in **0.38 seconds**, clearing its pending state; a fresh interactive submission took **0.36 seconds**. These are measurements of the lookup, not universal latency guarantees. The earlier Whisper startup regression completed through the actual interactive command in 0.75 seconds.
 
+## Live speed display
+
+During model inference, the live row shows **PP** (prompt-processing tokens/second), **TG** (generation tokens/second), **TTFT** (client-observed time to the first semantic output, including reasoning/tool output, in milliseconds), and request elapsed milliseconds. Rates are cumulative server-reported averages for the current request, not instantaneous samples or characters converted into tokens. Cached prompt tokens are excluded from the timed prompt calculation. The first generation sample shows `warming up` rather than an inflated one-token rate; missing server measurements show `n/a`.
+
+Timing updates come from the response stream using llama.cpp `timings_per_token` and `return_progress`. The terminal refreshes at 100 ms by default (configurable from 50 to 250 ms using `LLAMA_LIVE_REFRESH_SECONDS`). Millisecond units do not imply one new measurement per millisecond: a 1,000-Hz redraw would consume resources without making inference faster. Once semantic output arrives, redundant server-slot polling stops. A final speed summary remains visible after each model request. Tool operations retain their actual progress measurements; deterministic answers explicitly report that token speed is not applicable because the model was not used.
+
 ## Agent behavior and controls
 
 - Ordinary stable-knowledge questions have a bounded direct-answer path. Live or local evidence requests retain tools.
