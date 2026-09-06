@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source_file="/mnt/f/study/AI_ML/AI_and_Machine_Learning/Artificial_Intelligence/LocalAI/wsl2/a.sh"
+source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+source_file="$source_dir/a.sh"
+python_bin="${NATURE_TEST_PYTHON:-$HOME/.local/share/llama-agent/venv/bin/python}"
+if [ ! -x "$python_bin" ]; then python_bin=$(command -v python3); fi
 work_dir=$(mktemp -d /tmp/nature-source-acceptance.XXXXXX)
 trap 'rm -rf "$work_dir"' EXIT
-host_site="/mnt/c/Users/micha/AppData/Local/Programs/Python/Python312/Lib/site-packages"
+bash -n "$source_file"
+mkdir -p "$work_dir/home"
 
 sed -n \
-    '/^cat > "$HOME\/.local\/bin\/llama-agent" <<'\''AGENTEOF'\''$/,/^AGENTEOF$/p' \
+    '/<<'\''AGENTEOF'\''$/,/^AGENTEOF$/p' \
     "$source_file" |
     sed '1d;$d' >"$work_dir/llama-agent"
 
@@ -16,7 +20,7 @@ sed -n \
     "$source_file" |
     sed '1d;$d' >"$work_dir/acceptance.py"
 
-PYTHONPATH="$host_site${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -m py_compile "$work_dir/llama-agent"
-PYTHONPATH="$host_site${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 "$work_dir/acceptance.py" "$work_dir/llama-agent"
+test -s "$work_dir/llama-agent"
+test -s "$work_dir/acceptance.py"
+"$python_bin" -m py_compile "$work_dir/llama-agent"
+HOME="$work_dir/home" "$python_bin" "$work_dir/acceptance.py" "$work_dir/llama-agent"

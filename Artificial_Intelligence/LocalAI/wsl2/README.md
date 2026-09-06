@@ -1,192 +1,128 @@
-# Local AI Agent for Windows (WSL2) — One-Script Installer
+# Nature LocalAI for Windows and WSL2
 
-A single, self-contained shell script that turns **any Windows PC with WSL2** into a fully autonomous, **100% local** AI agent — no cloud, no API keys, no subscriptions. It installs everything from scratch, downloads the **best open-weight model that fits your exact hardware at the moment you run it**, and gives you an interactive CLI agent that can execute commands, manage files, automate Windows, and do almost anything you can type.
+`a.sh` installs and launches a local llama.cpp agent with Windows tools, durable task state, file operations, and optional web and browser integrations. Model inference runs locally; installation downloads, web research, and configured external integrations use the network.
 
-> **Model selection is dynamic.** Every time you run the installer it queries HuggingFace *right now*, ranks the current best agentic models (trending + curated 2026 families), checks their real file sizes against your GPU VRAM and RAM, and downloads the single best model that fits. What you get today may be even better tomorrow — the script always picks what's best *at that moment*.
+## Start or update
 
----
-
-## ✨ What it does
-
-- **One script, zero manual steps.** Detect hardware → install packages → install CUDA → build llama.cpp with GPU support → download the best model → configure passwordless sudo → install Windows automation tools → install the agent brain → run end-to-end tests.
-- **Fully local & private.** Everything runs on your machine. No data leaves your PC.
-- **A real agent, not a chatbot.** The agent narrates in plain English what it's doing, then **executes commands itself** — shell, Python, files, package installs, Chrome automation, and Windows operations — up to 60 tool rounds per request, with error recovery.
-- **Windows superpowers from WSL2.** Scans drives, lists startup programs ranked by CPU/RAM, searches files, reads the clipboard, sends notifications, screenshots + OCR, automates GUI keystrokes, manages Chrome with your real profile.
-- **Vision & speed.** If the chosen model supports it, the script auto-downloads its vision encoder (image understanding) and its speculative-decoding draft head (~1.5× faster generation). Flash attention + batch 2048 + prompt caching are enabled automatically.
-- **Persistent memory without self-summary loops.** The agent remembers facts and decisions across sessions and compacts long tasks deterministically, preserving the original objective and recent tool evidence.
-- **Re-runnable.** Run it again any time — it resumes, re-verifies, and upgrades to whatever the best model is *that day*.
-
----
-
-## 📋 Requirements
-
-| Requirement | Detail |
-|---|---|
-| **Windows 10/11** (64-bit) | Any version with WSL2 support |
-| **WSL2 with Ubuntu** | If you don't have it, the guide below installs it |
-| **Disk space** | ~15–30 GB free (packages + CUDA + model) |
-| **RAM** | 8 GB minimum; 16 GB+ recommended |
-| **GPU (optional but recommended)** | NVIDIA GPU with updated drivers → CUDA acceleration, far faster |
-| **Internet** | Needed once during install (downloads packages + model) |
-
-Works with or without an NVIDIA GPU. Without one it builds a CPU-only engine and picks a smaller model that still gives a fully working agent.
-
----
-
-## 🚀 Quick start (any Windows device)
-
-### 1. Install WSL2 + Ubuntu (if you don't have them yet)
-
-Open **PowerShell as Administrator** and run:
+On the configured Windows machine:
 
 ```powershell
-wsl --install -d Ubuntu
+llm
+llm -SelfTest
 ```
 
-Reboot when prompted. After the reboot, Ubuntu finishes installing and asks you to create a Linux username/password. Then verify:
-
-```powershell
-wsl -d Ubuntu -- bash -c "echo WSL2 ready"
-```
-
-### 2. Run the installer
-
-Inside your WSL2 Ubuntu terminal:
+For another Ubuntu WSL installation, clone this repository and run:
 
 ```bash
-cd /mnt/c/Users/<YourWindowsUsername>/Downloads
-wget -qO local-ai-setup.sh https://raw.githubusercontent.com/Michaelunkai/local-ai-wsl2/main/local-ai-setup.sh
-chmod +x local-ai-setup.sh
-./local-ai-setup.sh
+git clone https://github.com/Michaelunkai/localai.git
+cd localai/Artificial_Intelligence/LocalAI/wsl2
+bash a.sh
 ```
 
-> 💡 The script prints real-time progress for every step. A large model download (~10–13 GB) can take a while — grab a coffee. The CUDA toolkit (~4 GB) is also a large download on first install.
+The canonical installer is **`a.sh`**. The older `local-ai-setup.sh` is not the current launcher.
 
-### 3. Start your AI agent
-
-After the install finishes, run:
-
-```bash
-source ~/.bashrc && llama
-```
-
-You'll see the agent banner, then just **type what you want** in plain English:
-
-```
-> list everything that runs at Windows boot, ranked by CPU and RAM
-> scan my C drive and show the 10 heaviest folders
-> open YouTube in my Chrome browser
-> create a python script that renames all files in Downloads by date
-```
-
-The agent explains what it's doing in English, runs the commands itself, and gives you a structured answer.
-
----
-
-## 🛠️ Commands & tools
-
-### Agent commands
-
-| Command | What it does |
+| Invocation | Behavior |
 |---|---|
-| `llama` | Start the interactive agent (REPL) |
-| `chat` | Same as `llama` |
-| `llama "task"` | Single-shot mode: do one task and exit |
-| `llama-agent --server` | Run as an HTTP API server (OpenAI-compatible) |
+| `bash a.sh` or `bash a.sh --launch` | Verify installed components, repair when necessary, then open interactive mode |
+| `bash a.sh --check` | Read-only readiness check; does not install or launch a model |
+| `bash a.sh --install` | Explicit full installation/acceptance path |
+| `llama` or `chat` | Launch the installed runtime directly |
+| `llama "request"` | Run a single request |
 | `models` | List downloaded models |
-| `win-tools <action>` | Run a Windows operation directly |
 
-### Inside the agent (slash commands)
+Normal launches do not repeat package installation or download a new model. Runtime-only script changes are refreshed atomically with backups when the verified installation recipe has not changed. A dependency-stage checkpoint lets a failed later acceptance test resume without repeating completed package work. Missing dependencies or damaged runtime/model files still trigger repair.
 
-| Command | What it does |
+After updating, exit an existing interactive session with `/exit` and run `llm` again. Existing Python processes do not hot-reload edited source. Cold model loading takes time; a compatible healthy server can be reused. Servers belonging to other applications are preserved when a port is occupied.
+
+## Fast, evidence-based Windows path lookups
+
+Named read-only questions use the requested Windows evidence source before model inference:
+
+| Request | Evidence |
 |---|---|
-| `/quit` | Exit |
-| `/clear` | Clear the conversation |
-| `/reset` | Restart server + fresh conversation |
-| `/history` | Show conversation history |
-| `/memory` | Show persistent memory |
+| `output full path to exe of latest 'daymark' app version that is pinned in my taskbar` | Taskbar shortcut target and existing target file |
+| `path to Daymark desktop shortcut` | User and shared desktop shortcuts |
+| `full path to Calculator in the Start Menu` | User and shared Start Menu shortcuts |
+| `where is installed Firefox exe` | Start Menu shortcuts and App Paths registrations |
+| `output full path to exe running whisper tts every windows boot` | Startup records, enabled boot/logon tasks, automatic services |
+| `where is the running Obsidian executable` | Live process executable identity |
 
-### win-tools (Windows bridge)
+These are generic application lookups, not hard-coded Daymark or Whisper paths. They run PowerShell with encoded arguments and a 20-second subprocess limit. Taskbar and desktop lookups do not recurse; Start Menu lookup only recurses inside its two known folders. They never scan entire drives or invoke the model. Unsupported shortcut targets, denied access, missing files, and multiple matches produce an explicit incomplete result rather than an invented path. `/resume` can continue investigation; broad drive scans remain rejected for shortcut/startup identity questions.
 
-| Command | What it does |
+A taskbar target proves what that shortcut launches. It does **not** prove it is the newest version installed anywhere or the latest upstream release. The runtime retains file-version evidence and preserves that distinction. Packaged-app shortcuts without a direct executable target are reported as unresolved. Installed-app lookup is limited to the named registrations; portable apps without registrations may require a user-specified directory.
+
+The parser no longer converts natural language such as `path to exe` into `to.exe`. Explicit filenames such as `to.exe` and `freebuff exe` remain supported for actual filename searches. Requests to install, modify, delete, or update an application retain the task workflow instead of being reduced to a read-only answer.
+
+### Measured regression results
+
+On the development Windows/WSL machine on 2026-09-06, the exact Daymark taskbar lookup returned the same verified target in **2.914, 0.312, and 0.373 seconds**, versus the reported failed workflow still running after 454 seconds. The real `llm` interactive `/resume` also completed the previously stuck Daymark request in **0.38 seconds**, clearing its pending state; a fresh interactive submission took **0.36 seconds**. These are measurements of the lookup, not universal latency guarantees. The earlier Whisper startup regression completed through the actual interactive command in 0.75 seconds.
+
+## Agent behavior and controls
+
+- Ordinary stable-knowledge questions have a bounded direct-answer path. Live or local evidence requests retain tools.
+- Complex tasks use model-selected tools, durable checkpoints, completion checks, and recovery. Model mistakes and hardware limits remain possible; no claim of universal correctness or fixed completion time is made.
+- Progress reports observed state and elapsed time, without fabricated percentage or ETA.
+- The interactive `[ACTIVE]` label refreshes when work finishes.
+- GPU configuration checks available memory. The Qwen hybrid-model fallback uses system RAM when its GPU allocation cannot fit safely; this can make model-based work substantially slower. Deterministic lookups do not incur inference latency.
+
+| Command | Purpose |
 |---|---|
-| `win-tools scan C` | Heaviest folders on a drive |
-| `win-tools dir F:` | List top-level folders & files on a drive |
-| `win-tools disk C` | Disk space used/free/total |
-| `win-tools search C name` | Search files by name |
-| `win-tools processes` | Top memory-consuming processes |
-| `win-tools services` | Running services |
-| `win-tools startup` | Programs that run at boot + top CPU users |
-| `win-tools boot` | **Everything** at boot (registry + startup folder + scheduled tasks + auto services), ranked by CPU/RAM |
-| `win-tools scheduled` | Enabled scheduled tasks |
-| `win-tools gui <title> <keys>` | Activate a Windows window and send keystrokes |
-| `win-tools clip [set <text>]` | Read or set the Windows clipboard |
-| `win-tools notify [title] [msg]` | Show a Windows notification |
-| `win-tools shot` | Screenshot + OCR of the Windows screen |
-| `win-tools net` | Network adapters / IPs / Wi-Fi |
-| `win-tools gpu` | GPU info |
-| `win-tools battery` | Battery status |
+| `/help` | Current complete command list |
+| `/status`, `/events`, `/details` | Task state, progress, and retained diagnostics |
+| `/pause`, `/resume`, `/cancel` | Control an unfinished task |
+| `/sources` | Retained research evidence |
+| `/history`, `/memory` | Conversation and persistent memory |
+| `/exit` or `/quit` | Exit the interactive session |
 
-### Chrome automation
+Up/Down recalls prompts across sessions; Ctrl+R searches history. During work, additional input can steer the active task.
+
+## Windows tools and integrations
+
+`win-tools` exposes disk/folder/file inspection, processes, startup inventory, scheduled tasks, services, clipboard, notifications, screenshots/OCR, network, GPU, and battery queries. Examples:
 
 ```bash
-browse open https://www.youtube.com   # opens in your EXISTING Chrome profile
-browse newwindow https://example.com  # new Chrome window
-browse newtab                         # new blank tab
+win-tools disk C
+win-tools dir F:
+win-tools search C example.exe FIRST
+win-tools processes
+win-tools boot
+win-tools scheduled
 ```
 
----
+Drive scans are available for requests that actually need a filesystem search. They can be expensive; use a known drive or directory whenever possible.
 
-## 🔧 What gets installed (full capability map)
+`browse` can open URLs in the configured Chrome profile. Installed browser packages alone do not prove live tab-control availability: follow the runtime's capability report and configured browser boundary. Web research and MCP integrations depend on their configured providers, credentials, connectivity, and tool availability.
 
-| Category | Tools |
-|---|---|
-| **Build** | build-essential, cmake, git, CUDA toolkit, llama.cpp (GPU build) |
-| **Model** | Best-fitting open GGUF model auto-selected at run time (+ vision encoder & spec-decoding draft when available) |
-| **Files & shell** | ripgrep, fd, bat, fzf, tree, rsync, htop, tmux, screen, xclip |
-| **Media** | ffmpeg (audio/video), imagemagick (images) |
-| **Documents** | pandoc (conversion), poppler-utils + ghostscript (PDFs), tesseract (OCR) |
-| **Data** | sqlite3, python3 + requests/bs4/lxml (web scraping) |
-| **Network** | nmap, netcat, dnsutils, curl, wget |
-| **Dev** | nodejs, npm, GitHub CLI (gh), Docker, docker-compose |
-| **Media download** | yt-dlp |
-| **Browser automation** | Playwright + Chromium |
-| **Windows bridge** | win-tools (PowerShell), browse (Chrome with your real profile) |
+## Installation requirements and tools
 
----
+Windows 10/11 with Ubuntu under WSL2, sufficient RAM/storage for the selected GGUF model and toolchains, and network access for initial downloads are required. NVIDIA acceleration needs a working Windows driver and compatible WSL CUDA support. CPU execution is supported but large models can be slow.
 
-## 🧠 How the agent works
+The full installer includes build tools, CUDA/llama.cpp where supported, model selection/downloads, Python libraries, Node.js, GitHub CLI, document/media utilities, file/search tools, and Windows bridges. Model selection uses available catalog information and resource checks; it does not establish that a model is objectively best for every task. Some installation steps configure privileged tools and passwordless sudo. The agent is not a sandbox.
 
-1. You type a request in English.
-2. The agent **restates what it understood** and picks the single best tool for the job. High-confidence intents execute deterministically before inference, so "boot ranked by resources" runs `win-tools boot` once and immediately gives the model the verified result.
-3. It **narrates in real time**, runs the tool, and **interprets the result in English** after every step.
-4. It loops until the task is done (up to 30 rounds), then gives you a complete structured answer.
-5. **It never asks you to do things manually.** If a tool fails, it tries a different approach. It never invents numbers — every figure in an answer comes from real tool output.
+## Verification without reinstalling
 
-**Safety note:** the agent has full control of your machine by design (including passwordless sudo). It is an assistant, not a sandbox — use it on machines you trust.
+Run from this directory in WSL with the installed Python environment available:
 
----
+```bash
+bash -n a.sh
+bash .agents/source-invariants/run-full-source-acceptance.sh
+bash a.sh --check
+```
 
-## ❓ Troubleshooting
+The acceptance runner extracts the current embedded agent and tests into a temporary directory and runs them with an isolated HOME. It does not run the installer, restart the live model, or replace user task state. Override `NATURE_TEST_PYTHON` if a different prepared Python environment is needed.
 
-| Problem | Fix |
-|---|---|
-| `WSL has no installed distributions` | Run `wsl --install -d Ubuntu` (Admin PowerShell), reboot |
-| Install was interrupted | Just re-run the script — it resumes and finishes the remaining steps |
-| Model download fails | The script automatically tries the next-best model; also check your internet connection |
-| Agent says "Server failed to start" | Check the log: `cat ~/.local/share/llama-agent/server.log`, then run `/reset` |
-| Agent output shows `</arg_value>` / `</tool_call>` junk | Tool-call fragments leaked by reasoning models are auto-stripped in v7+; re-run the installer to update the agent brain |
-| The model "thinks" but never answers | Reasoning models (GLM-4.7-Flash, Qwen3) write `reasoning_content` first; the agent now budgets enough tokens and asks for the final answer automatically |
-| WSL memory seems low | The installer raises `.wslconfig` memory automatically; run `wsl --shutdown` once and reopen the terminal to apply |
-| CUDA not detected | Install the latest NVIDIA driver from nvidia.com and restart; the installer falls back gracefully to CPU-only |
-| Docker install conflict | The installer resolves `containerd`/`containerd.io` conflicts automatically (non-fatal either way) |
+Coverage includes argument parsing, taskbar/startup source selection, ambiguous/missing evidence, timeout handling, no-inference/no-drive-scan lookup completion, question routing, tool-call parsing, cancellation, context handling, GPU fallback compatibility, and durable task controls. Live Windows shortcut queries and interactive prompt behavior are also checked during release verification. A passing suite is not proof of all arbitrary tasks or a clean-machine installation.
 
----
+## Troubleshooting
 
-## 📄 License
+- Use `llm -SelfTest` or `bash a.sh --check` for readiness failures.
+- Inspect `/details` and `~/.local/share/llama-agent/agent.log` for task failures; model attempts have private `server-*.log` files in that directory.
+- If port 8080 is occupied, the launcher preserves its owner and selects a free loopback port. A bind race is recovered without retrying GPU variants.
+- Do not reinstall packages merely because a question was answered poorly. Update the source, reopen `llm`, and verify the relevant request.
+- Use `/cancel` to stop an old unwanted task, or `/pause` and `/resume` to preserve ongoing work.
 
-MIT — free to use, modify, and share.
+Implementation references: [Microsoft Shell Links](https://learn.microsoft.com/en-us/windows/win32/shell/links), [llama.cpp server documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
 
----
+## License
 
-*Local AI Agent for Windows — run a genuinely capable, private AI on your own hardware.*
+MIT; see [LICENSE](LICENSE).
