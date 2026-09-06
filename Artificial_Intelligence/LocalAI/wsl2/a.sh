@@ -155,6 +155,7 @@ def payload(text, tag):
     marker = "<<'" + tag + "'\n"
     return (text.split(marker, 1)[1].split('\n' + tag, 1)[0] + '\n').encode()
 def recipe(text):
+    text = re.sub(r"(?ms)(<<'PSEOF'\n).*?(\nPSEOF$)", r"\1<runtime Windows bridge>\2", text)
     text = re.sub(r'(?ms)^# BEGIN RESUMABLE DEPENDENCIES END\n.*?^# END RESUMABLE DEPENDENCIES END\n', '', text)
     return (text.split('\ninfo "Step 1/11:', 1)[1].split('\ninfo "Step 8/11:', 1)[0]
             + text.split('\ninfo "Step 10/11:', 1)[1].split('\ninfo "Step 11/11:', 1)[0])
@@ -174,16 +175,30 @@ try:
         targets = {'llama-agent': 'AGENTEOF', 'llama': 'LLEOF', 'chat': 'CHEOF',
                    'nature-code': 'NATURECODEEOF', 'models': 'MODEOF'}
         binary_dir = Path.home() / '.local/bin'
+        target_paths = {name: binary_dir / name for name in targets}
+        bridge = Path('/mnt/c/Users/Public/llama-win-tools.ps1')
+        if bridge.read_bytes().removeprefix(b'\xef\xbb\xbf') != payload(old_text, 'PSEOF'):
+            raise ValueError('Windows bridge changed outside the recorded installation')
+        targets['llama-win-tools.ps1'] = 'PSEOF'
+        target_paths['llama-win-tools.ps1'] = bridge
         if digest((binary_dir / 'llama-agent').read_bytes()) != old_agent_hash:
             raise ValueError('installed agent changed outside the recorded installation')
         updated = {name: payload(new_text, tag) for name, tag in targets.items()}
         compile(updated['llama-agent'], 'llama-agent', 'exec')
         for name, data in updated.items():
-            if name != 'llama-agent':
+            if name == 'llama-win-tools.ps1':
+                subprocess.run(['/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe',
+                    '-NoProfile', '-NonInteractive', '-Command',
+                    '[Console]::InputEncoding = [Text.Encoding]::UTF8; $e=$null; '
+                    '[void][Management.Automation.Language.Parser]::ParseInput([Console]::In.ReadToEnd(),[ref]$null,[ref]$e); '
+                    'if ($e.Count) { $e | Out-String | Write-Error; exit 1 }'],
+                    input=data, check=True, capture_output=True)
+                updated[name] = b'\xef\xbb\xbf' + data
+            elif name != 'llama-agent':
                 subprocess.run(['bash', '-n'], input=data, check=True, capture_output=True)
         backup = state / 'backups' / ('runtime-refresh-' + str(time.time_ns()))
         backup.mkdir(parents=True, mode=0o700)
-        originals = {name: (binary_dir / name).read_bytes() if (binary_dir / name).exists() else None
+        originals = {name: target_paths[name].read_bytes() if target_paths[name].exists() else None
                      for name in targets}
         (backup / 'installed-source.sha256').write_bytes(previous_receipt)
         for name, data in originals.items():
@@ -204,14 +219,14 @@ try:
         try:
             for name, data in updated.items():
                 if originals[name] != data:
-                    atomic(binary_dir / name, data, 0o700)
+                    atomic(target_paths[name], data, 0o700)
             atomic(stamp, (digest(new_bytes) + '|' + digest(updated['llama-agent']) + '\n').encode(), 0o600)
         except BaseException:
             for name, data in originals.items():
                 if data is not None:
-                    atomic(binary_dir / name, data, 0o700)
+                    atomic(target_paths[name], data, 0o700)
                 else:
-                    (binary_dir / name).unlink(missing_ok=True)
+                    target_paths[name].unlink(missing_ok=True)
             atomic(stamp, previous_receipt, 0o600)
             raise
         print('Runtime refreshed from the current script; installed packages and model were reused.')
@@ -2404,6 +2419,77 @@ function Invoke-LlamaFileWalk {
     $StateOut.Value = $state
 }
 
+function Initialize-LlamaFileRanker {
+    if ('NatureFileRanker' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Diagnostics;
+public static class NatureFileRanker {
+    public sealed class Entry { public string Path; public long Size; }
+    public sealed class Order : IComparer<Entry> {
+        public int Compare(Entry a, Entry b) {
+            int size = a.Size.CompareTo(b.Size);
+            return size != 0 ? size : StringComparer.Ordinal.Compare(a.Path, b.Path);
+        }
+    }
+    public static void Run(string[] roots, int top) {
+        if (top < 1 || top > 200) throw new ArgumentOutOfRangeException("top");
+        var best = new SortedSet<Entry>(new Order());
+        long files = 0, dirs = 0, errors = 0, links = 0;
+        var clock = Stopwatch.StartNew();
+        long last = 0;
+        foreach (string root in roots) {
+            var pending = new Stack<DirectoryInfo>();
+            pending.Push(new DirectoryInfo(root));
+            string drive = System.IO.Path.GetPathRoot(root).TrimEnd('\\');
+            Console.WriteLine("LLAMA_PROGRESS|files|started|{0}|{1}|{2}|0|{3}", drive, dirs, files, root);
+            while (pending.Count > 0) {
+                DirectoryInfo dir = pending.Pop();
+                dirs++;
+                try {
+                    // Enumeration supplies cached metadata; no per-file PowerShell invocation.
+                    foreach (FileSystemInfo item in dir.EnumerateFileSystemInfos()) {
+                        try {
+                            DirectoryInfo child = item as DirectoryInfo;
+                            if (child != null) {
+                                if ((item.Attributes & FileAttributes.ReparsePoint) != 0) links++;
+                                else pending.Push(child);
+                            }
+                            else {
+                                FileInfo file = item as FileInfo;
+                                if (file != null) {
+                                    long size = file.Length;
+                                    files++;
+                                    if (best.Count < top || size >= best.Min.Size) {
+                                        best.Add(new Entry { Path = file.FullName, Size = size });
+                                        if (best.Count > top) best.Remove(best.Min);
+                                    }
+                                }
+                            }
+                        } catch (IOException) { errors++; }
+                          catch (UnauthorizedAccessException) { errors++; }
+                        if (clock.ElapsedMilliseconds - last >= 500) {
+                            Console.WriteLine("LLAMA_PROGRESS|files|scanning|{0}|{1}|{2}|0|{3}", drive, dirs, files, dir.FullName.Replace('|','/'));
+                            Console.Out.Flush(); last = clock.ElapsedMilliseconds;
+                        }
+                    }
+                } catch (IOException) { errors++; }
+                  catch (UnauthorizedAccessException) { errors++; }
+            }
+            Console.WriteLine("LLAMA_PROGRESS|files|complete|{0}|{1}|{2}|0|{3}", drive, dirs, files, root);
+        }
+        var rows = new List<Entry>(best);
+        rows.Sort((a,b) => { int size = b.Size.CompareTo(a.Size); return size != 0 ? size : StringComparer.Ordinal.Compare(a.Path,b.Path); });
+        foreach (Entry entry in rows)
+            Console.WriteLine("{0}|{1}|{2:F3} GB", entry.Path, entry.Size, entry.Size / 1073741824.0);
+        Console.WriteLine("SUMMARY|files|ranked={0}|directories={1}|files={2}|errors={3}|skipped_links={4}", best.Count, dirs, files, errors, links);
+    }
+}
+'@
+}
+
 switch ($Action) {
     "scan" {
         $driveLetter = $Drive.TrimEnd(':')
@@ -2450,47 +2536,9 @@ switch ($Action) {
             return
         }
         Write-Host "Scanning ${driveLetter}: drive - retaining only the $requestedTop largest files while reporting real traversal checkpoints." -ForegroundColor Cyan
-        $rank = @{
-            Items = New-Object 'System.Collections.Generic.List[object]'
-            MinIndex = -1
-            MinLength = [long]::MaxValue
-        }
-        $walk = $null
-        Invoke-LlamaFileWalk $roots "files" {
-            param($filePath, $state)
-            try {
-                $info = [System.IO.FileInfo]$filePath
-                $candidate = [PSCustomObject]@{ FullName = $info.FullName; Length = [long]$info.Length }
-                if ($rank.Items.Count -lt $requestedTop) {
-                    $rank.Items.Add($candidate)
-                    if ($candidate.Length -lt $rank.MinLength) {
-                        $rank.MinLength = $candidate.Length
-                        $rank.MinIndex = $rank.Items.Count - 1
-                    }
-                } else {
-                    if ($candidate.Length -gt $rank.MinLength) {
-                        $rank.Items[$rank.MinIndex] = $candidate
-                        $nextMinIndex = 0
-                        $nextMinLength = [long]$rank.Items[0].Length
-                        for ($index = 1; $index -lt $rank.Items.Count; $index++) {
-                            $length = [long]$rank.Items[$index].Length
-                            if ($length -lt $nextMinLength) {
-                                $nextMinLength = $length
-                                $nextMinIndex = $index
-                            }
-                        }
-                        $rank.MinIndex = $nextMinIndex
-                        $rank.MinLength = $nextMinLength
-                    }
-                }
-            } catch {}
-        } ([ref]$walk)
-        $rank.Items | Sort-Object Length -Descending | ForEach-Object {
-            Write-Host ("{0}|{1}|{2} GB" -f $_.FullName, $_.Length, [math]::Round($_.Length / 1GB, 3))
-        }
-        if ($walk) {
-            Write-Host ("SUMMARY|files|ranked={0}|directories={1}|files={2}" -f $rank.Items.Count, $walk.Directories, $walk.Files)
-        }
+        Initialize-LlamaFileRanker
+        [NatureFileRanker]::Run([string[]]$roots, $requestedTop)
+        return
     }
     "search" {
         $driveLetter = $Drive.TrimEnd(':')
@@ -3310,6 +3358,7 @@ SYSTEM_PROMPT = r"""You are Nature, a highly capable local AI assistant running 
 The runtime narrates every tool call and result in plain English. For a task that needs work, your FIRST response must therefore be one complete native tool call, not a greeting, plan, recap, or hidden reasoning. After tool results, emit the next useful native tool call immediately. Reserve visible prose for a concise final answer after fresh verification. Never dump raw command output.
 - Start the first concrete tool action as soon as its target is known. Do not spend time restating, planning, or drafting a huge payload before acting.
 - Verify with executable checks that fail on a mismatch (for example Python assertions), not just printed claims or booleans. Reuse existing evidence and keep tool code concise. Give the requested result without repeating completed tasks or intermediate calculations unless requested.
+- When extending behavior, test interactions between the old and new input categories, not only each category in isolation. If there are separate fast and fallback paths, verify that equivalent inputs receive consistent results across those paths. Keep the final answer limited to requested facts supported by the observed results; omit unverified explanations or claims of recency.
 - For existing files, prefer a focused apply_patch over rewriting unchanged code. Run Python verification with run_python assertions or a standard test runner (python -m unittest or pytest), so the runtime can recognize the verification evidence.
 - For project work, create the smallest runnable structure first, then add focused bounded pieces and test them. Never compose an entire large application inside one tool call.
 
@@ -3966,6 +4015,7 @@ class LiveProgress:
         self._last_logged_at = 0.0
         self._last_visible_at = 0.0
         self._last_english_at = self._started
+        self._last_english_event_key = None
         self._transient_visible = False
         self._logged_lines = set()
         self._logged_order = collections.deque()
@@ -4030,6 +4080,7 @@ class LiveProgress:
         self._last_logged_at = 0.0
         self._last_visible_at = 0.0
         self._last_english_at = self._started
+        self._last_english_event_key = None
         self._transient_visible = False
         self._logged_lines = set()
         self._logged_order = collections.deque()
@@ -4139,11 +4190,13 @@ class LiveProgress:
             # Narrative has its own clock: millisecond redraws must not postpone
             # the once-per-second English report indefinitely.
             if self._interactive and now - self._last_english_at >= 1.0:
-                self._clear_transient()
-                owner = getattr(reporter, "__self__", None)
-                narrative = owner.english_report() if hasattr(owner, "english_report") else message
-                print(f"  [PROGRESS] {raw_elapsed:.1f} seconds elapsed. {_one_line(narrative, 700)}",
-                      file=self._stream, flush=True)
+                if event_key != self._last_english_event_key:
+                    self._clear_transient()
+                    owner = getattr(reporter, "__self__", None)
+                    narrative = owner.english_report() if hasattr(owner, "english_report") else message
+                    print(f"  [PROGRESS] {raw_elapsed:.1f} seconds elapsed. {_one_line(narrative, 700)}",
+                          file=self._stream, flush=True)
+                    self._last_english_event_key = event_key
                 self._last_english_at = now
             if rendered == self._last_rendered:
                 self._last_event_key = event_key
@@ -5221,6 +5274,16 @@ def _is_verification_call(call):
     if _is_mutating_call(call):
         return False
     cmd = (call.get("cmd") or "").lower()
+    try:
+        words = shlex.split(call.get("cmd") or "")
+        for index, word in enumerate(words[:-2]):
+            if (re.fullmatch(r"python(?:3(?:\.\d+)?)?", Path(word).name)
+                    and (index == 0 or words[index - 1] in ('&&', ';', '||'))
+                    and words[index + 1] == '-c'
+                    and _is_verification_call({'type': 'python', 'code': words[index + 2]})):
+                return True
+    except ValueError:
+        pass
     return bool(re.search(
         r"\b(pytest|pester|test-path|npm\s+test|npm\s+run\s+test|"
         r"python(?:3)?\s+-m\s+(?:py_compile|compileall|unittest)|"
@@ -5571,6 +5634,10 @@ class TaskState:
             time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
         )
         self.objective = data.get("objective") or objective
+        self.requires_live_evidence = bool(re.search(
+            r"\blive\s+(?:\w+\s+){0,3}(?:information|data|status|inventory|measurements|readings)\b",
+            self.objective, re.I,
+        ))
         self.previous_objective = str(data.get("previous_objective") or "")
         self.status = data.get("status", "running")
         self.round = int(data.get("round", 0))
@@ -5916,6 +5983,8 @@ class TaskState:
 
     def completion_gaps(self, content, finish_reason=""):
         gaps = json_artifact_response_gaps(self.objective, content)
+        if self.requires_live_evidence and self.successful_actions < 1:
+            gaps.append("the explicitly requested live evidence has not been collected in this task")
         if finish_reason in ("length", "max_tokens"):
             gaps.append("the model response hit its token limit and must continue")
         if self.inflight or self.pending_reconciliation:
@@ -10692,11 +10761,18 @@ def execute_tool_call(call, user_message=""):
                 f.flush()
                 tmp = f.name
             try:
+                python_env = _sanitized_tool_environment()
+                # The code lives in a temporary file, but imports belong to
+                # the user's working project, just as with python -c.
+                inherited_python_path = python_env.get("PYTHONPATH", "")
+                python_env["PYTHONPATH"] = str(Path.cwd()) + (
+                    os.pathsep + inherited_python_path if inherited_python_path else ""
+                )
                 returncode, stdout, stderr = run_live_process(
                     [sys.executable, tmp],
                     shell=False,
                     timeout=CMD_TIMEOUT_DEFAULT,
-                    env=_sanitized_tool_environment(),
+                    env=python_env,
                     label="Running the requested bounded Python calculation or data-processing step.",
                 )
             finally:
@@ -12313,7 +12389,11 @@ def narrate(call):
         if low.startswith("chmod "):
             return f"Applying the requested executable permissions to {target}."
         if low.startswith("cd "):
-            return f"Changing the working directory to {target}."
+            cd_args = command_parts[1:]
+            if cd_args and cd_args[0] == '--':
+                cd_args = cd_args[1:]
+            directory = _one_line(cd_args[0], 240) if cd_args else 'the home directory'
+            return f"Running the requested command from {directory}."
         if re.match(r"^dotnet\s+build\b", low):
             return f"Building {target} with the .NET SDK and collecting every compiler diagnostic."
         if re.match(r"^dotnet\s+test\b", low):
@@ -12848,8 +12928,8 @@ def trim_conversation(conv, task_state=None):
     system = conv[:1]
     first_user = next((m for m in conv[1:] if m.get("role") == "user"), None)
     recent_source = conv[max(1, len(conv) - 12):]
-    if task_state is not None and first_user is not None:
-        recent_source = [m for m in recent_source if m is not first_user]
+    # The first surviving user message may be a newly submitted objective.
+    # Its presence in a state summary is not a replacement for the user turn.
     while recent_source and recent_source[0].get("role") == "tool":
         recent_source.pop(0)
     recent = [compact_message(m) for m in recent_source]
@@ -13290,6 +13370,13 @@ def deterministic_largest_files_answer(output, drive, requested_count, color_gro
         f"Verified {len(rows)} largest files on drive {drive}, ranked by actual byte size:",
         "",
     ]
+    errors = re.search(r"\|errors=(\d+)", output or "")
+    links = re.search(r"\|skipped_links=(\d+)", output or "")
+    error_count = int(errors.group(1)) if errors else 0
+    link_count = int(links.group(1)) if links else 0
+    if error_count or link_count:
+        lines[0] = f"Largest {len(rows)} measured files on drive {drive}, ranked by actual byte size:"
+        lines.insert(1, f"Coverage limits: {error_count} unreadable entries/directories and {link_count} reparse entries were skipped. This is not a complete ranking of excluded content.")
     for index, (path, byte_size, human_size) in enumerate(rows, 1):
         if color_group and (index - 1) % color_group == 0:
             lines.append(f"### Files {index}-{min(index + color_group - 1, len(rows))}")
@@ -13875,6 +13962,8 @@ def _agent_turn_active(user_message, conversation, resume_payload=None):
                 )
             )
             completion_status = "End the final verified answer with [TASK_COMPLETE]."
+            if state.requires_live_evidence and state.successful_actions < 1:
+                completion_status += " This task explicitly requests live evidence. Collect it with a tool before answering; previous-task evidence does not satisfy this request."
             if state.patch_strategy_failed():
                 completion_status += (
                     " Patch validation has failed repeatedly without a successful change. "
@@ -20503,8 +20592,12 @@ with patch.object(nature.time, "monotonic", return_value=101.001):
     millisecond_live.refresh()
 with patch.object(nature.time, "monotonic", return_value=102.001):
     millisecond_live.refresh()
-assert millisecond_capture.getvalue().count("[PROGRESS]") == 2
+assert millisecond_capture.getvalue().count("[PROGRESS]") == 1
 assert "seconds elapsed" in millisecond_capture.getvalue()
+millisecond_live._reporter = lambda elapsed: ('new-evidence', 'New measured files arrived')
+with patch.object(nature.time, "monotonic", return_value=103.001):
+    millisecond_live.refresh()
+assert millisecond_capture.getvalue().count("[PROGRESS]") == 2
 scan_history = [{"role": "user", "content": "find and output top 10 hevieast files all over f drive"}]
 followup = nature.resolve_scan_followup("now same from C drive", scan_history)
 assert nature.direct_largest_files_request(followup) == ("C", 10)

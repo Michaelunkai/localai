@@ -14,8 +14,10 @@ if '--verify' in sys.argv:
     evidence = Path(sys.argv[sys.argv.index('--verify') + 1])
     results = json.loads((evidence / 'results.json').read_text())
     assert len(results) == 5, 'Five completed task results are required'
-    assert all('[INCOMPLETE]' not in item['answer'] for item in results), 'Unfinished answers cannot pass'
-    assert '4201' in results[0]['answer'].replace(',', '')
+    assert [item['task'] for item in results] == [1, 2, 3, 4, 5], 'Each distinct task must finish once'
+    assert all(item['answer'].strip() and not any(marker in item['answer'] for marker in
+               ('[INCOMPLETE]', '[BLOCKED:', '[ERROR:')) for item in results), 'Unfinished answers cannot pass'
+    assert re.search(r'(?<!\d)4,?201(?!\d)', results[0]['answer'])
     totals = json.loads((evidence / 'totals.json').read_text())
     # The request specifies the data, not JSON key names.
     assert any(value == {'pear': 5, 'apple': 5} for value in totals.values())
@@ -27,7 +29,9 @@ if '--verify' in sys.argv:
     for values, expected in [([], []), ([9, 2, 9, 1], [9, 2, 1]),
                              (['z', 'a', 'z'], ['z', 'a']),
                              ([[2], [1], [2]], [[2], [1]]),
-                             ([{'a': 1}, {'a': 1}, {'b': 2}], [{'a': 1}, {'b': 2}])]:
+                             ([{'a': 1}, {'a': 1}, {'b': 2}], [{'a': 1}, {'b': 2}]),
+                             ([{1}, frozenset({1})], [{1}]),
+                             ([frozenset({1}), {1}], [frozenset({1})])]:
         assert unique(values) == expected, values
     print('ARITHMETIC_CSV_CODE_FOLLOWUP_INDEPENDENTLY_VERIFIED')
     print('Windows response requires comparison against independent live CIM evidence:')
@@ -48,6 +52,21 @@ for name in ('ACTIVE_TASK_FILE', 'ACTIVE_TASK_LEASE_FILE', 'TASK_HISTORY_DIR',
 nature.TASK_HISTORY_DIR.mkdir(exist_ok=True)
 os.chdir(root)
 if '--conversation-regression' in sys.argv:
+    narration = nature.narrate({'type': 'command', 'cmd': 'cd /tmp/project && worker & echo "started pid $!"'})
+    assert '/tmp/project' in narration and 'started pid' not in narration
+    partial_ranking = nature.deterministic_largest_files_answer(
+        'F:\\file.bin|12|0.000 GB\nSUMMARY|files|ranked=1|errors=2|skipped_links=3', 'F', 100)
+    assert 'Coverage limits: 2 unreadable' in partial_ranking and '3 reparse' in partial_ranking
+    objective = 'Use live Windows system information to report its version.'
+    transition = [{'role': 'system', 'content': 'Answer the current request.'}]
+    transition += [{'role': 'assistant', 'content': f'Previous coding evidence {index}'} for index in range(25)]
+    transition.append({'role': 'user', 'content': objective})
+    compacted = nature.trim_conversation(transition, nature.TaskState(objective))
+    assert any(m.get('role') == 'user' and m.get('content') == objective for m in compacted), 'Compaction must retain the new user request, not only a system summary'
+    live_state = nature.TaskState(objective)
+    assert any('live evidence' in gap for gap in live_state.completion_gaps('Old task answer. [TASK_COMPLETE]'))
+    live_state.observe_tool({'type': 'command', 'cmd': 'system-query'}, 'fresh system evidence')
+    assert not any('live evidence' in gap for gap in live_state.completion_gaps('Result. [TASK_COMPLETE]'))
     for body in ('(Get-CimInstance Win32_OperatingSystem).Caption; Get-CimInstance Win32_PhysicalMemory | Measure-Object Capacity -Sum',
                  '1,2,3 | Measure-Object -Sum'):
         command = f'{nature.WINDOWS_POWERSHELL} -NoProfile -Command "{body}"'
@@ -58,6 +77,10 @@ if '--conversation-regression' in sys.argv:
     assert shlex.split(normalized)[-1] == body
     assert shlex.quote(body) in normalized, 'Bash must not expand PowerShell variables'
     assert 'run_python' in {t['function']['name'] for t in nature.select_tools('Create dedupe.py and test it.')}
+    (root / 'local_import_fixture.py').write_text('VALUE = 37\n')
+    imported = nature.execute_tool_call({'type': 'python', 'code':
+        'from local_import_fixture import VALUE\nassert VALUE == 37\nprint("PROJECT_IMPORT_OK")'})
+    assert 'PROJECT_IMPORT_OK' in imported and '[EXIT CODE:' not in imported, imported
     nature.ensure_model_server_until_ready = lambda *a, **kw: True
     nature.send_message = lambda *a, **kw: {'content': 'A triangle has three sides. [TASK_COMPLETE]', 'finish_reason': 'stop'}
     history = [{'role': 'system', 'content': 'Answer accurately.'}]
@@ -66,6 +89,12 @@ if '--conversation-regression' in sys.argv:
     assert nature._is_verification_call({'type': 'python', 'code': 'assert 2 + 2 == 4'})
     assert not nature._is_verification_call({'type': 'python', 'code': 'print("verified")'})
     assert not nature._is_verification_call({'type': 'python', 'code': 'open("x", "w").write("x"); assert True'})
+    assert nature._is_verification_call({'type': 'command', 'cmd':
+        "cd /tmp/project && python3 -c 'assert 2 + 2 == 4'"})
+    assert not nature._is_verification_call({'type': 'command', 'cmd':
+        "python3 -c 'print(\"verified\")'"})
+    assert not nature._is_verification_call({'type': 'command', 'cmd':
+        "echo python3 -c 'assert 2 + 2 == 4'"})
     import io
     class Reporter:
         calls = 0
@@ -130,6 +159,8 @@ prompts = [
     f'Update that Python function to also support unhashable values such as lists. Preserve its earlier behavior and run tests for both lists and integers.',
     'Use live Windows system information to report the Windows version, total physical RAM in GiB, and the name of each GPU. Do not guess.',
 ]
+if '--ranking' in sys.argv:
+    prompts = ['list top 100 heaviest files all over f drive']
 nature.ensure_initial_server_until_ready(nature.find_model())
 conversation = [{'role': 'system', 'content': nature.build_system_prompt()}]
 print('LIVE_EVIDENCE_DIR=' + str(root), flush=True)

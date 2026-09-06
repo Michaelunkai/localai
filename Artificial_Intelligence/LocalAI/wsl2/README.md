@@ -99,6 +99,12 @@ win-tools scheduled
 
 Drive scans are available for requests that actually need a filesystem search. They can be expensive; use a known drive or directory whenever possible.
 
+Largest-file ranking uses a compiled Windows metadata walker rather than invoking a PowerShell scriptblock for every file. It retains only the requested top N entries, emits measured traversal checkpoints, and reports unreadable locations and excluded reparse directories. Cached file metadata is used without reading file contents. A September 7 live request for the top 100 files across F completed through the installed agent in 4.47 seconds, with no model round; all 100 returned paths and byte sizes were independently checked. That run reported one unreadable location and 65 excluded reparse directories, so its output explicitly limited the coverage claim. Timing varies with drive size, storage, cache, and contention.
+
+Interactive transcript progress is emitted only when the measured event changes. Unchanged counts, stale checkpoints, and waiting states continue updating on the live status line without producing the same paragraph every second. Windows bridge payload updates now use the backed-up runtime refresh path, including PowerShell syntax validation, rather than forcing dependency reinstallation.
+
+Run `.agents/source-invariants/test-file-ranker.ps1` with Windows PowerShell to verify the embedded scanner against 5,000 fixture files and a missing directory. Use the Python live runner with `--ranking` to exercise the exact top-100 F-drive request in isolated task state.
+
 `browse` can open URLs in the configured Chrome profile. Installed browser packages alone do not prove live tab-control availability: follow the runtime's capability report and configured browser boundary. Web research and MCP integrations depend on their configured providers, credentials, connectivity, and tool availability.
 
 ## Installation requirements and tools
@@ -111,7 +117,13 @@ The full installer includes build tools, CUDA/llama.cpp where supported, model s
 
 Completed turns publish their compacted answers and tool evidence back to the interactive conversation. This prevents subsequent tasks from seeing earlier requests as unanswered and retains context for ordinary coding and data follow-ups. Successful Python assertions can satisfy a separate verification step; a printed claim alone cannot. Redirected progress also uses measured token/file deltas instead of repeating the generic action description.
 
+Compaction retains a recent user request even when it is the first surviving user message. A system summary of the objective does not replace that user turn. Explicit requests for live information/data require a successful tool result in the current task before completion. This is a minimum evidence gate; it does not establish the relevance or truth of every claim in the final answer.
+
 Each model round receives the outstanding action and verification status before it drafts an answer. General tasks retain access to the Python tool even without a language keyword. If a Python script changes project-file hashes and then fails, the change is recorded separately from the failure and requires read-only reconciliation; the runtime does not pretend nothing happened or count the failed check as successful verification.
+
+The Python tool includes the current working project in its subprocess import path. Its temporary script location must not prevent ordinary imports of project modules. A regression executes a real project-local import and assertion. The agent is also instructed to test interactions between existing and newly supported input categories and to avoid unsupported additions to final answers; those instructions are guidance, not deterministic correctness enforcement.
+
+Executed Python assertions are recognized both through `run_python` and through a shell invocation such as `python3 -c 'assert ...'`, including one following `cd ... &&`. This prevents successful checks being repeatedly requested merely because the model chose a different Python entry point. Printed claims and echoed Python source do not satisfy that classification; execution failures still fail the tool result.
 
 For one explicitly named JSON artifact with one reported JSON code block, completion compares that block against the actual file (up to 1 MB) and rejects contradictory contents. This is a consistency check for that artifact, not a general fact checker. Tool requests retain temperature 0.6 by default (`LLAMA_TOOL_TEMPERATURE`, bounded to 0–1); requests without tools retain their previous sampling setting.
 
@@ -124,6 +136,10 @@ The live general-task runner `.agents/source-invariants/run-live-general.py` exe
 Use `--continue <evidence-directory>` to resume its unfinished checkpoint; failed answers remain in `failed-attempts.jsonl` and cannot count as completed results. `--task 5` runs only the Windows-inventory case in a fresh workspace. In the September 6 investigation, the first four cases took approximately 29, 96, 104, and 658 seconds. Windows inventory initially failed after 219 seconds; after the routing repair its resumed segment took 251 seconds. Independent artifact checks passed and requested inventory fields matched CIM, but the answer added an unsupported explanation about virtual adapters. These results expose remaining latency and answer-quality limitations; the sampling experiment does not establish an optimal setting.
 
 A fresh Windows-inventory run with the final routing/quoting fixes and restored 0.6 temperature completed in 69.5 seconds, with the requested fields matching independent CIM evidence and final generation averaging 423.5 T/m. Its extra commentary still included an unsupported claim that the installed Windows build was the latest. The runtime does not guarantee every generated statement is correct, nor does this single run establish a stable speed improvement.
+
+Expanded independent verification subsequently found that the generated deduplication function mishandled an equal set and frozen set. Both input orders now form part of the verifier. Earlier passing checks covered integers, strings, lists, and dictionaries, and should not be interpreted as proof of every equality interaction. Five distinct, nonempty completed results are required before artifact verification; incomplete and blocked answers are rejected.
+
+A subsequent sequential run took 38.9, 87.6, 152.0, 443.5, and 44.3 seconds. It did not pass: the follow-up retained the mixed-type defect, and the final answer repeated the coding task instead of reporting Windows inventory. This run exposed the Python import-path failure, unrecognized shell assertions, and removal of the new user message during compaction. The corresponding runtime regressions pass; a fresh live run is required to assess the combined fixes.
 
 Run from this directory in WSL with the installed Python environment available:
 
