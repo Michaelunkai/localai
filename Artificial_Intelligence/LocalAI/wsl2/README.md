@@ -109,6 +109,22 @@ The full installer includes build tools, CUDA/llama.cpp where supported, model s
 
 ## Verification without reinstalling
 
+Completed turns publish their compacted answers and tool evidence back to the interactive conversation. This prevents subsequent tasks from seeing earlier requests as unanswered and retains context for ordinary coding and data follow-ups. Successful Python assertions can satisfy a separate verification step; a printed claim alone cannot. Redirected progress also uses measured token/file deltas instead of repeating the generic action description.
+
+Each model round receives the outstanding action and verification status before it drafts an answer. General tasks retain access to the Python tool even without a language keyword. If a Python script changes project-file hashes and then fails, the change is recorded separately from the failure and requires read-only reconciliation; the runtime does not pretend nothing happened or count the failed check as successful verification.
+
+For one explicitly named JSON artifact with one reported JSON code block, completion compares that block against the actual file (up to 1 MB) and rejects contradictory contents. This is a consistency check for that artifact, not a general fact checker. Tool requests retain temperature 0.6 by default (`LLAMA_TOOL_TEMPERATURE`, bounded to 0–1); requests without tools retain their previous sampling setting.
+
+Two failed patches in the current modification epoch remove the patch tool from subsequent rounds and require a different editing method. Resumed follow-ups retain the previous objective as reference context. Explicit resume resets the consecutive no-progress counter once; automatic retries retain it. Windows CIM queries are preserved instead of being rewritten as drive listings, and PowerShell command variables are protected from Bash expansion.
+
+Token rates are labeled averages from server timing counters. The display reports timing-sample age when no additional tokens arrive. A 1 ms redraw interval is best effort; the terminal, OS scheduler, and model do not provide a new measurement every millisecond. English updates run on a separate one-second clock and describe measured changes; unavailable measurements stay unavailable.
+
+The live general-task runner `.agents/source-invariants/run-live-general.py` exercises arithmetic, CSV-to-JSON processing, Python implementation, an unhashable-value follow-up, and live Windows inventory through the real model and tools. It creates an isolated temporary workspace and checkpoints, prints its evidence directory, and records answers and elapsed seconds in `results.json`. Run it with the installed agent's Python environment; `--verify <evidence-directory>` independently checks arithmetic and generated artifacts. Compare the final Windows answer with fresh CIM inventory. This is a regression sample, not a guarantee of arbitrary-task success or a minimum generation rate.
+
+Use `--continue <evidence-directory>` to resume its unfinished checkpoint; failed answers remain in `failed-attempts.jsonl` and cannot count as completed results. `--task 5` runs only the Windows-inventory case in a fresh workspace. In the September 6 investigation, the first four cases took approximately 29, 96, 104, and 658 seconds. Windows inventory initially failed after 219 seconds; after the routing repair its resumed segment took 251 seconds. Independent artifact checks passed and requested inventory fields matched CIM, but the answer added an unsupported explanation about virtual adapters. These results expose remaining latency and answer-quality limitations; the sampling experiment does not establish an optimal setting.
+
+A fresh Windows-inventory run with the final routing/quoting fixes and restored 0.6 temperature completed in 69.5 seconds, with the requested fields matching independent CIM evidence and final generation averaging 423.5 T/m. Its extra commentary still included an unsupported claim that the installed Windows build was the latest. The runtime does not guarantee every generated statement is correct, nor does this single run establish a stable speed improvement.
+
 Run from this directory in WSL with the installed Python environment available:
 
 ```bash

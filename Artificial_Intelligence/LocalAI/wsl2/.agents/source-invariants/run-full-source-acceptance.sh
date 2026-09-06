@@ -24,3 +24,5 @@ test -s "$work_dir/llama-agent"
 test -s "$work_dir/acceptance.py"
 "$python_bin" -m py_compile "$work_dir/llama-agent"
 HOME="$work_dir/home" "$python_bin" "$work_dir/acceptance.py" "$work_dir/llama-agent"
+HOME="$work_dir/home" NATURE_AGENT_SOURCE="$work_dir/llama-agent" \
+    "$python_bin" "$source_dir/.agents/source-invariants/run-live-general.py" --conversation-regression

@@ -3309,6 +3309,8 @@ SYSTEM_PROMPT = r"""You are Nature, a highly capable local AI assistant running 
 ## THE GOLDEN RULE: REAL-TIME ENGLISH NARRATION
 The runtime narrates every tool call and result in plain English. For a task that needs work, your FIRST response must therefore be one complete native tool call, not a greeting, plan, recap, or hidden reasoning. After tool results, emit the next useful native tool call immediately. Reserve visible prose for a concise final answer after fresh verification. Never dump raw command output.
 - Start the first concrete tool action as soon as its target is known. Do not spend time restating, planning, or drafting a huge payload before acting.
+- Verify with executable checks that fail on a mismatch (for example Python assertions), not just printed claims or booleans. Reuse existing evidence and keep tool code concise. Give the requested result without repeating completed tasks or intermediate calculations unless requested.
+- For existing files, prefer a focused apply_patch over rewriting unchanged code. Run Python verification with run_python assertions or a standard test runner (python -m unittest or pytest), so the runtime can recognize the verification evidence.
 - For project work, create the smallest runnable structure first, then add focused bounded pieces and test them. Never compose an entire large application inside one tool call.
 
 ## CORE RULES - NON-NEGOTIABLE
@@ -3437,6 +3439,7 @@ desktop deliverable was created; launch and verify the actual requested host.
 Windows paths in Linux tools:
 - Convert `F:\folder\project` to `/mnt/f/folder/project` before using bash, Python, read_file, or write_file.
 - A Windows path in a create/build request is the destination, not evidence that the user wants a drive scan.
+- run_command executes in Linux bash. For Windows operations outside win-tools, invoke `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command '...'` and use Get-CimInstance for system information. Do not issue Windows commands such as wmic directly to bash. Use semicolons inside PowerShell v5 scripts.
 
 ## CRITICAL: WINDOWS DRIVES
 Windows drives mount under /mnt/ (C: is /mnt/c). Use win-tools for broad whole-drive inventory scans because recursive Linux scans across an entire Windows drive are slow. For an explicitly named project path, use normal bash/Python/file tools on its exact `/mnt/<drive>/...` path so you can create, edit, test, and verify the project.
@@ -3455,7 +3458,7 @@ You can perform system administration, but root-level actions require explicit u
 
 ## STYLE
 - Write like a competent human, not a robot.
-- Start with a friendly English explanation, narrate as you work, end with a clear structured summary.
+- Let the runtime narrate tool work; give a concise final answer with the requested results and verification.
 """
 
 # ─── Native tools ──────────────────────────────────────────────────────────
@@ -3579,7 +3582,7 @@ def select_tools(objective):
             objective or "",
         )
     )
-    names = {"read_file"} if pure_research else {"run_command", "read_file"}
+    names = {"read_file"} if pure_research else {"run_command", "run_python", "read_file"}
     if any(x in low for x in ("python", "data", "calculate", "scrape", "json", "csv")):
         names.add("run_python")
     if objective_requires_action(low) or any(x in low for x in (
@@ -4125,6 +4128,12 @@ class LiveProgress:
                 f"{message.rstrip('.')}. No newer failure or completion signal "
                 "has arrived, so this operation remains active."
             )
+        if (not self._interactive and now - self._last_english_at >= 1.0
+                and now - self._last_logged_at >= LIVE_LOG_HEARTBEAT_SECONDS):
+            owner = getattr(reporter, "__self__", None)
+            if hasattr(owner, "english_report"):
+                display_message = owner.english_report()
+                self._last_english_at = now
         rendered = self._format_line(raw_elapsed, display_message)
         with self._output_lock:
             # Narrative has its own clock: millisecond redraws must not postpone
@@ -4572,6 +4581,33 @@ def extract_target_paths(objective):
         add_target(raw)
     return targets
 
+def json_artifact_response_gaps(objective, content):
+    """Check an unambiguous reported JSON artifact against its actual contents."""
+    blocks = re.findall(r"```json\s*\n(.*?)```", content or "", re.I | re.S)
+    source = objective or ""
+    candidates = [path for path in extract_target_paths(source) if path.lower().endswith('.json')]
+    candidates += [match.group(2) for match in re.finditer(r"([`\"'])([^\r\n]*?\.json)\1", source, re.I)]
+    unquoted = re.sub(r"([`\"'])([^\r\n]*?\.json)\1", "", source, flags=re.I)
+    candidates += re.findall(r"(?<!\w)/[^\s<>`\"]+\.json\b", unquoted, re.I)
+    if not candidates and '/' not in source and '\\' not in source:
+        candidates += re.findall(r"[\w.-]+\.json\b", source, re.I)
+    paths = list(dict.fromkeys(normalize_user_path(raw.strip("()[]'\"`.,;")) for raw in candidates))
+    if len(paths) != 1 or len(blocks) != 1 or Path(paths[0]).name not in (content or ""):
+        return []
+    path = Path(paths[0]).expanduser()
+    try:
+        if path.stat().st_size > 1000000:
+            return []
+        actual = json.loads(path.read_text())
+        reported = json.loads(blocks[0])
+    except (OSError, ValueError) as exc:
+        return [f"the claimed JSON artifact could not be validated: {path} ({type(exc).__name__})"]
+    if actual != reported:
+        return [f"the reported JSON differs from the actual file {path}. Correct the answer using this file evidence, without rewriting correct output: "
+                + json.dumps(actual, ensure_ascii=False)[:4000]]
+    return []
+
+
 def command_uses_direct_windows_powershell(command):
     text = command or ""
     executable = (
@@ -4618,9 +4654,21 @@ def normalize_direct_windows_powershell(command):
         text,
     )
 
-    return text.replace(
+    text = text.replace(
         executable_placeholder, shlex.quote(str(WINDOWS_POWERSHELL))
     )
+    # A single quoted -Command argument is PowerShell source, not Bash source.
+    # Protect $variables and $(expressions) from Linux-shell expansion.
+    try:
+        parts = shlex.split(text)
+        command_index = next((index for index, part in enumerate(parts)
+                              if part.lower() in ('-command', '-c')), -1)
+        if (command_index >= 1 and command_index == len(parts) - 2
+                and any(marker in parts[-1] for marker in ('$', '`'))):
+            return ' '.join(shlex.quote(part) for part in parts)
+    except ValueError:
+        pass
+    return text
 
 def incomplete_shell_heredoc_marker(command):
     """Return an unterminated heredoc marker before a shell can block on it."""
@@ -5159,6 +5207,15 @@ def _is_verification_call(call):
     call_type = call.get("type", "command")
     if call_type == "read":
         return True
+    if call_type == "python":
+        if _is_mutating_call(call):
+            return False
+        import ast
+        try:
+            tree = ast.parse(call.get("code") or "")
+        except SyntaxError:
+            return False
+        return any(isinstance(node, ast.Assert) for node in ast.walk(tree))
     if call_type != "command":
         return False
     if _is_mutating_call(call):
@@ -5514,6 +5571,7 @@ class TaskState:
             time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
         )
         self.objective = data.get("objective") or objective
+        self.previous_objective = str(data.get("previous_objective") or "")
         self.status = data.get("status", "running")
         self.round = int(data.get("round", 0))
         self.sequence = int(data.get("sequence", 0))
@@ -5625,6 +5683,14 @@ class TaskState:
             round=self.round,
         )
 
+    def patch_strategy_failed(self):
+        return sum(
+            1 for event in self.events
+            if event.get("kind") == "tool" and not event.get("success")
+            and event.get("sequence", 0) > self.last_mutation_sequence
+            and event.get("detail", "").startswith("patch:")
+        ) >= 2
+
     def observe_tool(self, call, output, user_message=""):
         success = not _tool_failed(output)
         fingerprint = _call_fingerprint(call, user_message)
@@ -5662,6 +5728,14 @@ class TaskState:
             success,
         )
         self.inflight = None
+        if not success and call.pop("_observed_file_changes", False):
+            self.mutations += 1
+            self.last_mutation_sequence = self.sequence
+            self.pending_reconciliation = {
+                "mutating": True,
+                "description": "The failed script changed project files; verify their current contents before retrying.",
+            }
+            self.record("partial-mutation", "Project-file hashes changed before the script failed; separate verification is required", False)
         if success:
             checkpoint_root = re.search(
                 r"(?m)^CHECKPOINT_ROOT=(.+)$",
@@ -5841,7 +5915,7 @@ class TaskState:
         return evidence
 
     def completion_gaps(self, content, finish_reason=""):
-        gaps = []
+        gaps = json_artifact_response_gaps(self.objective, content)
         if finish_reason in ("length", "max_tokens"):
             gaps.append("the model response hit its token limit and must continue")
         if self.inflight or self.pending_reconciliation:
@@ -5905,8 +5979,8 @@ class TaskState:
         ):
             action_pressure = (
                 "\nAction pressure: enough read-only evidence has been collected. "
-                "The next successful step must be one apply_patch call for one file "
-                "and one minimal hunk, no more than 80 diff lines, that addresses a "
+                "The next successful step must be a focused editing action for one file "
+                "using a different method if the previous editing method failed, addressing a "
                 "proven defect, or an exact blocker with fresh proof. "
                 "Do not reread files already represented in recent evidence."
             )
@@ -5935,6 +6009,7 @@ class TaskState:
         return (
             "[DURABLE TASK STATE]\n"
             f"Objective: {compact_text(self.objective, 6000)}\n"
+            f"Previous completed request (reference context only): {compact_text(self.previous_objective, 4000)}\n"
             f"Current working directory: {Path.cwd()}.\n"
             f"Round: {self.round}; successful actions: {self.successful_actions}; "
             f"modifications: {self.mutations}; verifications: {self.verifications}.\n"
@@ -5948,6 +6023,7 @@ class TaskState:
         return {
             "task_id": self.task_id,
             "objective": self.objective,
+            "previous_objective": self.previous_objective,
             "status": self.status,
             "round": self.round,
             "sequence": self.sequence,
@@ -5987,12 +6063,23 @@ def load_pending_task():
     try:
         data = json.loads(ACTIVE_TASK_FILE.read_text())
         if data.get("status") in ("running", "recovering", "interrupted"):
+            if "previous_objective" not in data:
+                for path in sorted(TASK_HISTORY_DIR.glob('*.json'), reverse=True)[:16]:
+                    if path.stem >= str(data.get('task_id', '')):
+                        continue
+                    try:
+                        earlier = json.loads(path.read_text())
+                    except (OSError, ValueError):
+                        continue
+                    if earlier.get('status') == 'complete':
+                        data['previous_objective'] = earlier.get('objective', '')
+                        break
             return data
     except Exception:
         pass
     return None
 
-def sanitize_resume_conversation(saved_conversation, objective):
+def sanitize_resume_conversation(saved_conversation, objective, previous_objective=""):
     """Rebuild an external resume from requirements and bounded durable facts.
 
     A checkpoint can survive a runtime upgrade after several failed model turns.
@@ -6033,6 +6120,7 @@ def sanitize_resume_conversation(saved_conversation, objective):
                 "interrupted. Do not replay them. Reassess the current project "
                 "before proposing the next action.\n"
                 f"Current parsed target path(s): {target_text}.\n"
+                f"Previous completed request (reference context only; do not repeat its work): {compact_text(previous_objective, 4000)}\n"
                 f"{facts}"
             ),
         },
@@ -7490,6 +7578,7 @@ class ModelTelemetry:
         self.first_token_ms = None
         self.english_tokens = 0
         self.server_timings = {}
+        self.timings_updated_at = None
         self.chunks = 0
         self.reasoning_chars = 0
         self.content_chars = 0
@@ -7541,7 +7630,12 @@ class ModelTelemetry:
             added = max(0, count - self.english_tokens)
             self.english_tokens = count
             progress = dict(self.prompt_progress)
+            sample_at = self.timings_updated_at
         if count:
+            if not added:
+                age = max(0, time.monotonic() - sample_at) if sample_at is not None else 0
+                return (f"No additional tokens reported; {count:.0f} measured so far. "
+                        f"Latest timing sample {age:.1f}s ago. {self.speed_summary()}")
             return f"Generated {added:.0f} additional tokens ({count:.0f} total). {self.speed_summary()}"
         if progress:
             return (f"Preparing the prompt: {progress.get('processed', 0):,} of "
@@ -7556,6 +7650,7 @@ class ModelTelemetry:
                 value = timings.get(key)
                 if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
                     self.server_timings[key] = value
+                    self.timings_updated_at = time.monotonic()
 
     def speed_summary(self):
         with self.lock:
@@ -7577,8 +7672,8 @@ class ModelTelemetry:
             stats.get('predicted_n', 0) < 2 or stats.get('predicted_ms', 0) < 10
         ):
             generation = "warming up"
-        return (f"PP {rate(prompt_n, prompt_ms)} T/m | "
-                f"TG {generation} T/m | "
+        return (f"PP {rate(prompt_n, prompt_ms)} T/m avg | "
+                f"TG {generation} T/m avg | "
                 f"TTFT {ttft} | {max(0, time.monotonic() - self.started_at) * 1000:.0f} ms")
 
     def update(self, delta, snapshot=False):
@@ -8819,7 +8914,11 @@ def intercept_command(cmd, user_message=""):
         low = cmd.lower()
         if objective_requires_action(user_message):
             return cmd
-        if "get-childitem" in low or "get-child" in low or "measure-object" in low:
+        # Measure-Object aggregates arbitrary objects (RAM, services, numbers),
+        # not just files. Preserve explicit pipelines and their projections.
+        if "get-ciminstance" in low or "get-wmiobject" in low:
+            return cmd
+        if "get-childitem" in low or "get-child" in low:
             if re.search(r"(?i)\bHK(?:LM|CU|CR|U|CC):\\", cmd):
                 return cmd
             dm = re.search(
@@ -10612,10 +10711,17 @@ def execute_tool_call(call, user_message=""):
                 output += ("\n[STDERR]\n" + stderr) if output else stderr
             if returncode != 0:
                 output += f"\n[EXIT CODE: {returncode}]"
+            changed_files = before_snapshot is not None and project_file_snapshot() != before_snapshot
+            if returncode != 0 and changed_files:
+                call["_observed_file_changes"] = True
+                output += (
+                    "\n[PARTIAL FILE CHANGE: Project-file hashes changed before this failure. "
+                    "Inspect and verify the existing output before retrying a write.]"
+                )
             if (
                 returncode == 0
                 and before_snapshot is not None
-                and project_file_snapshot() == before_snapshot
+                and not changed_files
             ):
                 return (
                     "[NO CHANGE: The Python script claimed a file-editing action, "
@@ -11831,7 +11937,7 @@ def send_message(messages, tools=None, max_tokens=None):
         "model": "local",
         "messages": messages,
         "max_tokens": max_tokens or RESPONSE_MAX_TOKENS,
-        "temperature": 0.6,
+        "temperature": _bounded_env_float("LLAMA_TOOL_TEMPERATURE", 0.6, 0.0, 1.0) if tools else 0.6,
         "top_p": 0.95,
         "top_k": 20,
         "repeat_penalty": 1.08,
@@ -13254,10 +13360,15 @@ def register_completion_rejection(state, gaps):
 def _agent_turn_active(user_message, conversation, resume_payload=None):
     """Run until the objective passes deterministic completion gates."""
     global CURRENT_TASK_STATE, CURRENT_CONVERSATION
+    caller_conversation = conversation
     original_objective = (
         resume_payload.get("objective") if resume_payload else user_message
     )
     state = TaskState(original_objective, restored=resume_payload)
+    if not resume_payload:
+        state.previous_objective = next((str(message.get('content', '')) for message in reversed(conversation)
+                                        if message.get('role') == 'user' and message.get('content')
+                                        and not str(message['content']).lstrip().startswith('[')), '')
     state.status = "running"
     plan = TaskPlan(original_objective)
     CURRENT_TASK_STATE = state
@@ -13741,6 +13852,8 @@ def _agent_turn_active(user_message, conversation, resume_payload=None):
                         "append_file", "apply_patch",
                     }
                 ]
+            if state.patch_strategy_failed():
+                selected_tools = [tool for tool in selected_tools if tool['function']['name'] != 'apply_patch']
             state.record(
                 "tool-routing",
                 "exposed " + ", ".join(
@@ -13761,8 +13874,27 @@ def _agent_turn_active(user_message, conversation, resume_payload=None):
                 and state.no_progress_rounds < 3
                 )
             )
+            completion_status = "End the final verified answer with [TASK_COMPLETE]."
+            if state.patch_strategy_failed():
+                completion_status += (
+                    " Patch validation has failed repeatedly without a successful change. "
+                    "Use read_file and write_file, or a bounded Python edit, to complete the change. "
+                    "Do not produce another patch. Preserve unrelated existing code."
+                )
+            if state.requires_action and state.mutations < 1:
+                completion_status += (
+                    " No modifying action has completed for the current request yet. "
+                    "Use tools to perform its requested changes before claiming completion."
+                )
+            if (state.requires_verification
+                    and state.last_verification_sequence <= state.last_mutation_sequence):
+                completion_status += (
+                    " A separate successful verification is still required after the latest modification. "
+                    "Once the requested changes are ready, run that check before drafting an answer. "
+                    "A read-back or run_python assertions can verify the result."
+                )
             result = send_message(
-                conversation,
+                conversation + [{"role": "system", "content": completion_status}],
                 tools=selected_tools,
                 max_tokens=FOCUSED_ACTION_MAX_TOKENS if action_pressure_active else None,
             )
@@ -14035,6 +14167,11 @@ def _agent_turn_active(user_message, conversation, resume_payload=None):
                         False,
                     )
                     success, repeats = False, 1
+                elif call_type == "patch" and state.patch_strategy_failed():
+                    result_str = "[STRATEGY CHANGE REQUIRED: Repeated patch failures. Use another editing tool with current file evidence; no patch was executed.]"
+                    state.record("loop-guard", "blocked repeated failed patch strategy", False)
+                    state.no_progress_rounds += 1
+                    success, repeats = False, 1
                 elif state.scan_already_completed(call, original_objective):
                     result_str = (
                         "[SCAN REPLAY BLOCKED: This scan already succeeded in this task. "
@@ -14192,6 +14329,11 @@ def _agent_turn_active(user_message, conversation, resume_payload=None):
         payload = state.to_dict()
         payload["conversation"] = conversation
         return _RetryActiveTask(payload)
+    finally:
+        # Compaction returns a new list. Publish its final evidence back to the
+        # REPL's original list so the next request sees completed answers and
+        # tool results instead of an accumulation of unanswered user requests.
+        caller_conversation[:] = conversation
 
 def direct_question_resume_allowed(user_message, payload):
     if not payload:
@@ -14209,6 +14351,11 @@ def direct_question_resume_allowed(user_message, payload):
 
 def agent_turn(user_message, conversation, resume_payload=None):
     """Never abandon a submitted task after an internal failure."""
+    caller_conversation = conversation
+    if resume_payload:
+        # Reset only on external continuation, never on automatic retries.
+        # Preserve evidence and duplicate-action fingerprints.
+        resume_payload = dict(resume_payload, no_progress_rounds=0)
     if not resume_payload:
         user_message = resolve_scan_followup(user_message, conversation)
     turn_started = time.monotonic()
@@ -14247,6 +14394,7 @@ def agent_turn(user_message, conversation, resume_payload=None):
         ui_event("blocked", str(exc), "warning")
         return f"[BLOCKED: {exc}]"
     finally:
+        caller_conversation[:] = conversation
         if not is_question:
             ui_event("timing", f"Task turn took {time.monotonic() - turn_started:.2f}s.", "info")
 
@@ -15544,7 +15692,7 @@ def _run_user_input_inner(user_input, conversation):
                 print("\033[0;33m[No unfinished task is checkpointed]\033[0m\n")
                 return True
             restored = sanitize_resume_conversation(
-                pending.get("conversation") or [], pending.get("objective", "")
+                pending.get("conversation") or [], pending.get("objective", ""), pending.get("previous_objective", "")
             )
             conversation.clear()
             conversation.extend(restored)
@@ -16575,7 +16723,7 @@ def _single_shot_mode_inner(msg, model_path, resume=False):
         return
     if resume:
         conversation = sanitize_resume_conversation(
-            pending.get("conversation") or [], pending.get("objective", "")
+            pending.get("conversation") or [], pending.get("objective", ""), pending.get("previous_objective", "")
         )
         print(f"\033[1;35m[RECOVERY]\033[0m Resuming unfinished task {pending.get('task_id', '')}.")
         response = agent_turn(
@@ -20410,7 +20558,8 @@ assert not scan_guard.scan_already_completed(scan_call, scan_guard.objective)
 assert "Measured 1,000 additional files" in scan_speed.english_report()
 assert "Measured 0 additional files" in scan_speed.english_report()
 assert "Generated 30 additional tokens" in speed.english_report()
-assert "Generated 0 additional tokens" in speed.english_report()
+assert "No additional tokens reported" in speed.english_report()
+assert "Latest timing sample" in speed.english_report()
 print("NATURE_FOLLOWUP_ACCEPTANCE_OK")
 print("NATURE_SPEED_ACCEPTANCE_OK")
 print("NATURE_QUESTION_ACCEPTANCE_OK")
