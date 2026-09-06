@@ -3962,6 +3962,7 @@ class LiveProgress:
         self._last_rendered = ""
         self._last_logged_at = 0.0
         self._last_visible_at = 0.0
+        self._last_english_at = self._started
         self._transient_visible = False
         self._logged_lines = set()
         self._logged_order = collections.deque()
@@ -4025,6 +4026,7 @@ class LiveProgress:
         self._last_rendered = ""
         self._last_logged_at = 0.0
         self._last_visible_at = 0.0
+        self._last_english_at = self._started
         self._transient_visible = False
         self._logged_lines = set()
         self._logged_order = collections.deque()
@@ -4125,6 +4127,13 @@ class LiveProgress:
             )
         rendered = self._format_line(raw_elapsed, display_message)
         with self._output_lock:
+            # Narrative has its own clock: millisecond redraws must not postpone
+            # the once-per-second English report indefinitely.
+            if self._interactive and now - self._last_english_at >= 1.0:
+                self._clear_transient()
+                print(f"  [PROGRESS] {raw_elapsed:.1f} seconds elapsed. {_one_line(message, 700)}",
+                      file=self._stream, flush=True)
+                self._last_english_at = now
             if rendered == self._last_rendered:
                 self._last_event_key = event_key
                 self._last_message = message
@@ -12768,6 +12777,31 @@ def extract_memory_entries(text):
             entries.append(e)
     return entries
 
+def resolve_scan_followup(user_message, conversation):
+    """Carry the last explicit file-ranking request into a drive-only follow-up."""
+    match = re.fullmatch(
+        r"\s*(?:now\s+)?(?:do\s+)?(?:the\s+)?same\s+"
+        r"(?:from|for|on|in)\s+(?:the\s+)?([a-z])(?:\s*:\s*|\s+drive)?[.!?\s]*",
+        user_message or "", re.IGNORECASE,
+    )
+    if not match:
+        return user_message
+    # Stop at the nearest actual user turn; unrelated intervening requests must
+    # not silently resurrect an older scan. Runtime hints use bracket prefixes.
+    for item in reversed(conversation or []):
+        if item.get("role") != "user" or not isinstance(item.get("content"), str):
+            continue
+        previous = item["content"].strip()
+        if not previous or previous.startswith("["):
+            continue
+        previous = previous.splitlines()[0]
+        request = direct_largest_files_request(previous)
+        if request:
+            return f"Find and output the top {request[1]} largest files on {match.group(1).upper()} drive."
+        break
+    return user_message
+
+
 def direct_largest_files_request(user_message):
     """Return (drive, count) for an unambiguous read-only largest-file request."""
     text = " ".join((user_message or "").split())
@@ -14111,6 +14145,8 @@ def direct_question_resume_allowed(user_message, payload):
 
 def agent_turn(user_message, conversation, resume_payload=None):
     """Never abandon a submitted task after an internal failure."""
+    if not resume_payload:
+        user_message = resolve_scan_followup(user_message, conversation)
     turn_started = time.monotonic()
     is_question = bool(direct_question_kind(user_message))
     if not is_question:
@@ -20227,6 +20263,7 @@ millisecond_capture = io.StringIO()
 millisecond_live = nature.LiveProgress(stream=millisecond_capture, interactive=True)
 millisecond_live._bind_stream()
 millisecond_live._started = 100.0
+millisecond_live._last_english_at = 100.0
 millisecond_live._reporter = lambda elapsed: ("speed-fixture", "TG 600 T/m")
 with patch.object(nature.time, "monotonic", return_value=100.001):
     millisecond_live.refresh(force=True)
@@ -20235,6 +20272,45 @@ with patch.object(nature.time, "monotonic", return_value=100.002):
 assert "1 ms |" in millisecond_capture.getvalue()
 assert "2 ms |" in millisecond_capture.getvalue()
 assert millisecond_capture.getvalue().count("TG 600 T/m") == 2
+with patch.object(nature.time, "monotonic", return_value=101.001):
+    millisecond_live._last_english_at = 100.0
+    millisecond_live.refresh()
+with patch.object(nature.time, "monotonic", return_value=102.001):
+    millisecond_live.refresh()
+assert millisecond_capture.getvalue().count("[PROGRESS]") == 2
+assert "seconds elapsed" in millisecond_capture.getvalue()
+scan_history = [{"role": "user", "content": "find and output top 10 hevieast files all over f drive"}]
+followup = nature.resolve_scan_followup("now same from C drive", scan_history)
+assert nature.direct_largest_files_request(followup) == ("C", 10)
+assert nature.resolve_scan_followup("delete same from C drive", scan_history) == "delete same from C drive"
+assert nature.resolve_scan_followup("now same from C drive", []) == "now same from C drive"
+assert nature.resolve_scan_followup("now same from C drive", scan_history + [
+    {"role": "user", "content": "Explain photosynthesis"}
+]) == "now same from C drive"
+with tempfile.TemporaryDirectory(prefix="nature-followup-test-") as followup_dir:
+    root = Path(followup_dir)
+    history = root / "tasks"
+    history.mkdir()
+    calls = []
+    def measured_file_fixture(call, objective):
+        calls.append(call["cmd"])
+        _, _, drive, count = call["cmd"].split()
+        return "\n".join(f"{drive}:\\file{i}.bin|{1000-i}|1 KB" for i in range(int(count)))
+    with patch.multiple(nature, ACTIVE_TASK_FILE=root / "active.json",
+                        ACTIVE_TASK_LEASE_FILE=root / "active.lock",
+                        TASK_HISTORY_DIR=history, EVENT_LOG_FILE=root / "events.jsonl"), \
+         patch.object(nature, "execute_tool_call", side_effect=measured_file_fixture), \
+         patch.object(nature, "send_message", side_effect=AssertionError("No inference for drive follow-up")), \
+         contextlib.redirect_stdout(io.StringIO()):
+        nature.reset_active_controls()
+        conversation = []
+        for query, drive in [(scan_history[0]["content"], "F"), ("now same from C drive", "C"),
+                             ("same on D:", "D"), ("same for E drive", "E")]:
+            answer = nature.agent_turn(query, conversation)
+            assert f"Verified 10 largest files on drive {drive}" in answer, answer
+            assert not nature.ACTIVE_TASK_FILE.exists()
+        assert calls == ["win-tools files F 10", "win-tools files C 10", "win-tools files D 10", "win-tools files E 10"], calls
+print("NATURE_FOLLOWUP_ACCEPTANCE_OK")
 print("NATURE_SPEED_ACCEPTANCE_OK")
 print("NATURE_QUESTION_ACCEPTANCE_OK")
 print("NATURE_ACCEPTANCE_OK")
